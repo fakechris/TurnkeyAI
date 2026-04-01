@@ -25,6 +25,10 @@ import type {
   ThreadSessionMemoryRecord,
 } from "@turnkeyai/core-types/team";
 import {
+  describeRecoveryRunGate,
+  listAllowedRecoveryRunActions,
+} from "@turnkeyai/core-types/recovery-operator-semantics";
+import {
   buildFlowConsoleReport,
   buildGovernanceConsoleReport,
 } from "@turnkeyai/qc-runtime/operator-inspection";
@@ -1972,6 +1976,10 @@ function printRecoveryRunList(payload: { totalRuns: number; runs: RecoveryRun[] 
       `- ${parts.join("  ")}`
     );
     console.log(`  ${run.latestSummary}`);
+    const allowedActions = listAllowedRecoveryRunActions(run.status).filter((action) => action !== "dispatch");
+    if (allowedActions.length > 0) {
+      console.log(`  allowed: ${allowedActions.map(describeAttemptAction).join(", ")}`);
+    }
   }
 }
 
@@ -1990,6 +1998,13 @@ function printRecoveryConsole(report: RecoveryConsoleReport): void {
     console.log(
       `  phases: ${Object.entries(report.phaseCounts)
         .map(([phase, count]) => `${phase}=${count}`)
+        .join(", ")}`
+    );
+  }
+  if (Object.keys(report.gateCounts).length > 0) {
+    console.log(
+      `  gates: ${Object.entries(report.gateCounts)
+        .map(([gate, count]) => `${gate}=${count}`)
         .join(", ")}`
     );
   }
@@ -2057,6 +2072,8 @@ function printRecoveryRun(run: RecoveryRun): void {
   console.log(`  latest status: ${run.latestStatus}`);
   console.log(`  current gate: ${describeRecoveryGate(run)}`);
   console.log(`  summary: ${run.latestSummary}`);
+  const allowedActions = listAllowedRecoveryRunActions(run.status).filter((action) => action !== "dispatch");
+  console.log(`  allowed actions: ${allowedActions.length > 0 ? allowedActions.map(describeAttemptAction).join(", ") : "none"}`);
   if (run.waitingReason) {
     console.log(`  waiting reason: ${run.waitingReason}`);
   }
@@ -2944,29 +2961,5 @@ function describeAttemptAction(action: "dispatch" | "retry" | "fallback" | "resu
 }
 
 function describeRecoveryGate(run: RecoveryRun): string {
-  switch (run.status) {
-    case "waiting_approval":
-      return "waiting for approval";
-    case "waiting_external":
-      return "waiting for external/manual follow-up";
-    case "retrying":
-      return "retrying same layer";
-    case "fallback_running":
-      return "running fallback transport";
-    case "resumed":
-      return "resuming existing session";
-    case "running":
-      return "dispatch in progress";
-    case "recovered":
-      return "recovered";
-    case "failed":
-      return "failed and awaiting next recovery action";
-    case "aborted":
-      return "aborted";
-    case "superseded":
-      return "superseded by a newer recovery attempt";
-    case "planned":
-    default:
-      return "planned";
-  }
+  return describeRecoveryRunGate(run.status);
 }

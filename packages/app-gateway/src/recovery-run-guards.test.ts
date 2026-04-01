@@ -3,7 +3,7 @@ import test from "node:test";
 
 import type { RecoveryRun } from "@turnkeyai/core-types/team";
 
-import { validateRecoveryRunAction } from "./recovery-run-guards";
+import { buildRecoveryRunActionConflict, validateRecoveryRunAction } from "./recovery-run-guards";
 
 function buildRun(status: RecoveryRun["status"]): RecoveryRun {
   return {
@@ -46,4 +46,18 @@ test("validateRecoveryRunAction blocks terminal recovery runs", () => {
   assert.equal(validateRecoveryRunAction(buildRun("recovered"), "retry"), "recovery run is already recovered");
   assert.equal(validateRecoveryRunAction(buildRun("aborted"), "resume"), "recovery run is already aborted");
   assert.equal(validateRecoveryRunAction(buildRun("recovered"), "reject"), "recovery run is already recovered");
+});
+
+test("buildRecoveryRunActionConflict exposes gate and allowed actions for operator feedback", () => {
+  const conflict = buildRecoveryRunActionConflict(buildRun("waiting_approval"), "resume");
+  assert.deepEqual(conflict, {
+    error: "recovery run requires approval before it can continue",
+    recoveryRun: buildRun("waiting_approval"),
+    currentGate: "waiting for approval",
+    allowedActions: ["approve", "reject"],
+  });
+});
+
+test("buildRecoveryRunActionConflict returns null when the action is allowed", () => {
+  assert.equal(buildRecoveryRunActionConflict(buildRun("failed"), "retry"), null);
 });

@@ -1515,13 +1515,15 @@ const BUILT_IN_CASES: RegressionCase[] = [
         `replay=${report.replay.attentionCount}`,
         `governance=${report.governance.attentionCount}`,
         `recovery=${report.recovery.attentionCount}`,
+        `recoveryGate=${report.recovery.gateCounts["waiting for approval"] ?? 0}`,
       ];
       const passed =
         report.totalAttentionCount === 4 &&
         report.flow.attentionCount === 1 &&
         report.replay.attentionCount === 1 &&
         report.governance.attentionCount === 1 &&
-        report.recovery.attentionCount === 1;
+        report.recovery.attentionCount === 1 &&
+        report.recovery.gateCounts["waiting for approval"] === 1;
       return buildResult(this, passed, details);
     },
   },
@@ -1577,12 +1579,14 @@ const BUILT_IN_CASES: RegressionCase[] = [
         `recovery=${report.recovery.attentionCount}`,
         `statusRecovered=${report.recovery.statusCounts.recovered ?? 0}`,
         `phaseRecovered=${report.recovery.phaseCounts.recovered ?? 0}`,
+        `gateRecovered=${report.recovery.gateCounts.recovered ?? 0}`,
       ];
       const passed =
         report.totalAttentionCount === 0 &&
         report.recovery.attentionCount === 0 &&
         report.recovery.statusCounts.recovered === 1 &&
-        report.recovery.phaseCounts.recovered === 1;
+        report.recovery.phaseCounts.recovered === 1 &&
+        report.recovery.gateCounts.recovered === 1;
       return buildResult(this, passed, details);
     },
   },

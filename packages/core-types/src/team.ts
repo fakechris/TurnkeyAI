@@ -1368,6 +1368,7 @@ export interface RecoveryConsoleReport {
   attentionCount: number;
   statusCounts: Partial<Record<RecoveryRunStatus, number>>;
   phaseCounts: Partial<Record<RecoveryRunProgress["phase"], number>>;
+  gateCounts: Record<string, number>;
   nextActionCounts: Partial<Record<RecoveryRun["nextAction"], number>>;
   browserResumeCounts: Partial<Record<BrowserResumeMode, number>>;
   browserOutcomeCounts: Partial<Record<RecoveryBrowserOutcome, number>>;

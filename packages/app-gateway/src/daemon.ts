@@ -145,7 +145,7 @@ import { FinanceWorkerHandler } from "@turnkeyai/worker-runtime/finance-worker-h
 import { LocalWorkerRuntime } from "@turnkeyai/worker-runtime/local-worker-runtime";
 import { DefaultWorkerRegistry } from "@turnkeyai/worker-runtime/worker-registry";
 
-import { validateRecoveryRunAction } from "./recovery-run-guards";
+import { buildRecoveryRunActionConflict } from "./recovery-run-guards";
 
 const PORT = Number(process.env.TURNKEYAI_DAEMON_PORT ?? 4100);
 const DATA_DIR = path.resolve(process.cwd(), ".daemon-data");
@@ -2364,14 +2364,11 @@ async function executeRecoveryRunAction(input: {
     const recoveryPlan = findReplayRecoveryPlan(synced.records, run.sourceGroupId, synced.report);
     const syncedRun = findRecoveryRun(synced.records, run.recoveryRunId, [run], now) ?? run;
 
-    const actionGuardFailure = validateRecoveryRunAction(syncedRun, input.action);
-    if (actionGuardFailure) {
+    const actionGuardConflict = buildRecoveryRunActionConflict(syncedRun, input.action);
+    if (actionGuardConflict) {
       return {
         statusCode: 409,
-        body: {
-          error: actionGuardFailure,
-          recoveryRun: syncedRun,
-        },
+        body: actionGuardConflict,
       };
     }
 
