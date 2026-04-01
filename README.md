@@ -29,12 +29,14 @@
 - operator summary / operator attention / replay bundle 的统一 case 语义与首页级摘要
 - replay summary / incident / grouped inspection / recovery dispatch / console / workflow-log surface
 - recovery-linked incident bundles 与 recovery workflow 状态汇总
+- replay console 现同时暴露 actionable bundles 与 recent resolved bundles
 - RecoveryRun / attempt 持久化与 `approve / reject / retry / fallback / resume` action surface
 - RecoveryRun event log / merged timeline / progress / phase / causality chain
 - browser-specific recovery outcome 与 repeated retry/fallback escalation policy
 - browser 显式 session protocol：`spawn / send / history / resume`
 - Recovery runtime v2：attempt causality / event timeline / operator surface / recovery chain
 - bounded regression harness 与 browser reliability soak 样本扩充
+- browser recovery validation 已覆盖 multi-attempt resume -> fallback -> cold reopen 长链
 - Browser Runtime v2.6 的 ownership-aware re-entry
 - browser `hot / warm / cold` resume 与 target-local snapshot/ref history
 - retrieval ranking / recall trigger / budget-aware prompt packing / tool-result pruning / long-running compression 第一版
@@ -155,6 +157,8 @@ npx @turnkeyai/cli tui
 - scenario parity acceptance harness
 - failure injection harness
 - unified validation catalog: `validation-cases` / `validation-run [suite[:item] ...]`
+
+`replay-console` 会同时显示仍需处理的 `latest bundles`，以及最近已收敛的 `latest resolved bundles`，便于把当前告警和刚恢复的 case 分开看。
 
 模型配置默认会按这个顺序查找：
 

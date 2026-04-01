@@ -3366,6 +3366,212 @@ const BUILT_IN_CASES: RegressionCase[] = [
     },
   },
   {
+    caseId: "browser-recovery-multi-attempt-chain-stays-aligned",
+    title: "Browser recovery multi-attempt chain stays aligned across surfaces",
+    area: "browser",
+    summary:
+      "A stale browser session that fails resume once and then recovers via fallback cold reopen should converge to the same recovered state across recovery, replay, and operator views.",
+    run() {
+      const records = [
+        {
+          replayId: "task-br0:worker:worker:browser:task:task-br0",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 10,
+          threadId: "thread-1",
+          taskId: "task-br0",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "browser target detached during operator flow",
+          failure: {
+            category: "stale_session",
+            layer: "worker",
+            retryable: true,
+            message: "target detached during browser action",
+            recommendedAction: "resume",
+          },
+        },
+        {
+          replayId: "task-br1:scheduled",
+          layer: "scheduled",
+          status: "completed",
+          recordedAt: 15,
+          threadId: "thread-1",
+          taskId: "task-br1",
+          roleId: "role-operator",
+          summary: "resume recovery dispatched",
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-br0",
+              attemptId: "recovery:task-br0:attempt:1",
+              dispatchReplayId: "task-br1:scheduled",
+            },
+          },
+        },
+        {
+          replayId: "task-br1:worker:worker:browser:task:task-br1",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 20,
+          threadId: "thread-1",
+          taskId: "task-br1",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "resume failed because the original target was gone",
+          failure: {
+            category: "stale_session",
+            layer: "worker",
+            retryable: true,
+            message: "resume could not recover the detached target",
+            recommendedAction: "fallback",
+          },
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-br0",
+              attemptId: "recovery:task-br0:attempt:1",
+              dispatchReplayId: "task-br1:scheduled",
+            },
+          },
+        },
+        {
+          replayId: "task-br2:scheduled",
+          layer: "scheduled",
+          status: "completed",
+          recordedAt: 25,
+          threadId: "thread-1",
+          taskId: "task-br2",
+          roleId: "role-operator",
+          summary: "fallback recovery dispatched",
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-br0",
+              attemptId: "recovery:task-br0:attempt:2",
+              dispatchReplayId: "task-br2:scheduled",
+            },
+          },
+        },
+        {
+          replayId: "task-br2:worker:worker:browser:task:task-br2",
+          layer: "worker",
+          status: "completed",
+          recordedAt: 40,
+          threadId: "thread-1",
+          taskId: "task-br2",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "browser reopened the detached target after fallback",
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-br0",
+              attemptId: "recovery:task-br0:attempt:2",
+              dispatchReplayId: "task-br2:scheduled",
+            },
+            payload: {
+              sessionId: "browser-session-br",
+              targetId: "target-br",
+              resumeMode: "cold",
+              targetResolution: "reopen",
+            },
+          },
+        },
+      ] satisfies ReplayRecord[];
+
+      const existingRuns: RecoveryRun[] = [
+        {
+          recoveryRunId: buildRecoveryRunId("task-br0"),
+          threadId: "thread-1",
+          sourceGroupId: "task-br0",
+          taskId: "task-br0",
+          roleId: "role-operator",
+          targetLayer: "worker",
+          targetWorker: "browser",
+          latestStatus: "failed",
+          status: "fallback_running",
+          nextAction: "fallback_transport",
+          autoDispatchReady: true,
+          requiresManualIntervention: false,
+          latestSummary: "fallback recovery dispatched",
+          currentAttemptId: "recovery:task-br0:attempt:2",
+          attempts: [
+            {
+              attemptId: "recovery:task-br0:attempt:1",
+              action: "resume",
+              requestedAt: 12,
+              updatedAt: 20,
+              status: "failed",
+              nextAction: "auto_resume",
+              summary: "resume failed because the original target was gone",
+              completedAt: 20,
+              dispatchedTaskId: "task-br1",
+              targetLayer: "worker",
+              targetWorker: "browser",
+              failure: {
+                category: "stale_session",
+                layer: "worker",
+                retryable: true,
+                message: "resume could not recover the detached target",
+                recommendedAction: "fallback",
+              },
+            },
+            {
+              attemptId: "recovery:task-br0:attempt:2",
+              action: "fallback",
+              requestedAt: 24,
+              updatedAt: 25,
+              status: "fallback_running",
+              nextAction: "fallback_transport",
+              summary: "fallback recovery dispatched",
+              dispatchedTaskId: "task-br2",
+              targetLayer: "worker",
+              targetWorker: "browser",
+            },
+          ],
+          createdAt: 12,
+          updatedAt: 25,
+        },
+      ];
+
+      const recoveryRuns = buildRecoveryRuns(records, existingRuns, 100);
+      const run = recoveryRuns.find((entry) => entry.sourceGroupId === "task-br0");
+      const bundle = buildReplayIncidentBundle(records, "task-br0");
+      const replayConsole = buildReplayConsoleReport(records, 10);
+      const consoleBundle = replayConsole.latestResolvedBundles.find((entry) => entry.groupId === "task-br0");
+      const operatorSummary = buildOperatorSummaryReport({
+        flows: [],
+        permissionRecords: [],
+        events: [],
+        replays: records,
+        recoveryRuns,
+      });
+      const details = [
+        `run=${run?.status ?? "-"}`,
+        `attempt1=${run?.attempts[0]?.status ?? "-"}`,
+        `attempt2=${run?.attempts[1]?.browserOutcome ?? "-"}`,
+        `bundle=${bundle?.recoveryWorkflow?.status ?? "-"}`,
+        `open=${replayConsole.openIncidents}`,
+        `followUpOpen=${bundle?.followUpSummary?.openGroups ?? "-"}`,
+        `followUpRecovered=${bundle?.followUpSummary?.browserContinuityCounts.recovered ?? "-"}`,
+        `console=${consoleBundle?.workflowStatus ?? "-"}`,
+        `activeCases=${operatorSummary.attentionOverview?.activeCases?.length ?? 0}`,
+        `operatorRecovered=${operatorSummary.recovery.statusCounts.recovered ?? 0}`,
+      ];
+      const passed =
+        run?.status === "recovered" &&
+        run.attempts[0]?.status === "failed" &&
+        run.attempts[1]?.browserOutcome === "cold_reopen" &&
+        bundle?.recoveryWorkflow?.status === "recovered" &&
+        replayConsole.openIncidents === 0 &&
+        bundle.followUpSummary?.browserContinuityCounts.recovered === 1 &&
+        consoleBundle?.workflowStatus === "recovered" &&
+        consoleBundle.browserContinuityState === "recovered" &&
+        (operatorSummary.attentionOverview?.activeCases?.length ?? 0) === 0 &&
+        operatorSummary.recovery.attentionCount === 0 &&
+        operatorSummary.recovery.statusCounts.recovered === 1 &&
+        operatorSummary.recovery.browserOutcomeCounts.cold_reopen === 1;
+      return buildResult(this, Boolean(passed), details);
+    },
+  },
+  {
     caseId: "replay-console-browser-continuity-counts",
     title: "Replay console summarizes browser continuity counts",
     area: "browser",

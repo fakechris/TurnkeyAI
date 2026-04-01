@@ -1278,7 +1278,20 @@ export interface ReplayConsoleReport {
   latestBundles: Array<{
     groupId: string;
     latestStatus: ReplayTaskSummary["latestStatus"];
-    nextAction: ReplayRecoveryPlan["nextAction"];
+    nextAction: ReplayRecoveryPlan["nextAction"] | "none";
+    autoDispatchReady: boolean;
+    caseState?: OperatorCaseState;
+    workflowStatus?: NonNullable<ReplayIncidentBundle["recoveryWorkflow"]>["status"];
+    workflowSummary?: string;
+    caseHeadline?: string;
+    browserContinuityState?: ReplayBrowserContinuitySummary["state"];
+    targetLayer?: ReplayRecoveryPlan["targetLayer"];
+    targetWorker?: ReplayRecoveryPlan["targetWorker"];
+  }>;
+  latestResolvedBundles: Array<{
+    groupId: string;
+    latestStatus: ReplayTaskSummary["latestStatus"];
+    nextAction: ReplayRecoveryPlan["nextAction"] | "none";
     autoDispatchReady: boolean;
     caseState?: OperatorCaseState;
     workflowStatus?: NonNullable<ReplayIncidentBundle["recoveryWorkflow"]>["status"];

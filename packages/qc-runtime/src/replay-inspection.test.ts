@@ -472,6 +472,125 @@ test("replay console counts resolved groups even when browser continuity is not 
   assert.equal(bundle?.caseState, "resolved");
   assert.equal(consoleReport.openIncidents, 0);
   assert.equal(consoleReport.recoveredGroups, 1);
+  assert.equal(consoleReport.latestResolvedBundles[0]?.groupId, "task-closed");
+  assert.equal(consoleReport.latestResolvedBundles[0]?.caseState, "resolved");
+  assert.equal(consoleReport.latestResolvedBundles[0]?.workflowStatus, "recovered");
+  assert.equal(consoleReport.latestResolvedBundles[0]?.browserContinuityState, "attention");
+});
+
+test("replay console suppresses superseded failed follow-up groups once the root chain recovers", () => {
+  const records = [
+    {
+      replayId: "task-root:worker:worker:browser:task:task-root",
+      layer: "worker",
+      status: "failed",
+      recordedAt: 10,
+      threadId: "thread-1",
+      taskId: "task-root",
+      roleId: "role-operator",
+      workerType: "browser",
+      summary: "browser target detached",
+      failure: {
+        category: "stale_session",
+        layer: "worker",
+        retryable: true,
+        message: "target detached during browser action",
+        recommendedAction: "resume",
+      },
+    },
+    {
+      replayId: "task-follow-1:scheduled",
+      layer: "scheduled",
+      status: "completed",
+      recordedAt: 15,
+      threadId: "thread-1",
+      taskId: "task-follow-1",
+      roleId: "role-operator",
+      summary: "resume recovery dispatched",
+      metadata: {
+        recoveryContext: {
+          parentGroupId: "task-root",
+          attemptId: "recovery:task-root:attempt:1",
+          dispatchReplayId: "task-follow-1:scheduled",
+        },
+      },
+    },
+    {
+      replayId: "task-follow-1:worker:worker:browser:task:task-follow-1",
+      layer: "worker",
+      status: "failed",
+      recordedAt: 20,
+      threadId: "thread-1",
+      taskId: "task-follow-1",
+      roleId: "role-operator",
+      workerType: "browser",
+      summary: "resume failed because the original target was gone",
+      failure: {
+        category: "stale_session",
+        layer: "worker",
+        retryable: true,
+        message: "resume could not recover the detached target",
+        recommendedAction: "fallback",
+      },
+      metadata: {
+        recoveryContext: {
+          parentGroupId: "task-root",
+          attemptId: "recovery:task-root:attempt:1",
+          dispatchReplayId: "task-follow-1:scheduled",
+        },
+      },
+    },
+    {
+      replayId: "task-follow-2:scheduled",
+      layer: "scheduled",
+      status: "completed",
+      recordedAt: 25,
+      threadId: "thread-1",
+      taskId: "task-follow-2",
+      roleId: "role-operator",
+      summary: "fallback recovery dispatched",
+      metadata: {
+        recoveryContext: {
+          parentGroupId: "task-root",
+          attemptId: "recovery:task-root:attempt:2",
+          dispatchReplayId: "task-follow-2:scheduled",
+        },
+      },
+    },
+    {
+      replayId: "task-follow-2:worker:worker:browser:task:task-follow-2",
+      layer: "worker",
+      status: "completed",
+      recordedAt: 40,
+      threadId: "thread-1",
+      taskId: "task-follow-2",
+      roleId: "role-operator",
+      workerType: "browser",
+      summary: "browser reopened via fallback",
+      metadata: {
+        recoveryContext: {
+          parentGroupId: "task-root",
+          attemptId: "recovery:task-root:attempt:2",
+          dispatchReplayId: "task-follow-2:scheduled",
+        },
+        payload: {
+          sessionId: "browser-root",
+          targetId: "target-root",
+          resumeMode: "cold",
+          targetResolution: "reopen",
+        },
+      },
+    },
+  ] as Parameters<typeof buildReplayInspectionReport>[0];
+
+  const consoleReport = buildReplayConsoleReport(records, 10);
+  assert.equal(consoleReport.openIncidents, 0);
+  assert.equal(consoleReport.attentionCount, 0);
+  assert.equal(consoleReport.latestBundles.length, 0);
+  assert.equal(consoleReport.recoveredGroups, 1);
+  assert.equal(consoleReport.latestResolvedBundles[0]?.groupId, "task-root");
+  assert.equal(consoleReport.latestResolvedBundles[0]?.workflowStatus, "recovered");
+  assert.equal(consoleReport.latestResolvedBundles[0]?.browserContinuityState, "recovered");
 });
 
 test("recovery run timeline merges events and replay follow-up entries", () => {

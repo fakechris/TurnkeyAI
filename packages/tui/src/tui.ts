@@ -2547,6 +2547,33 @@ function printReplayConsole(payload: ReplayConsoleReport): void {
       }
     }
   }
+  if (payload.latestResolvedBundles.length > 0) {
+    console.log("  latest resolved bundles:");
+    for (const bundle of payload.latestResolvedBundles) {
+      const parts = [
+        bundle.groupId,
+        `next=${describeRecoveryAction(bundle.nextAction)}`,
+        `latest=${bundle.latestStatus}`,
+        `auto=${bundle.autoDispatchReady ? "yes" : "no"}`,
+      ];
+      if (bundle.caseState) {
+        parts.push(`case=${bundle.caseState}`);
+      }
+      if (bundle.workflowStatus) {
+        parts.push(`workflow=${bundle.workflowStatus}`);
+      }
+      if (bundle.browserContinuityState) {
+        parts.push(`browser=${bundle.browserContinuityState}`);
+      }
+      console.log(`    - ${parts.join("  ")}`);
+      if (bundle.caseHeadline) {
+        console.log(`      ${bundle.caseHeadline}`);
+      }
+      if (bundle.workflowSummary) {
+        console.log(`      ${bundle.workflowSummary}`);
+      }
+    }
+  }
   if (payload.latestIncidents.length > 0) {
     console.log("  latest incidents:");
     for (const incident of payload.latestIncidents) {

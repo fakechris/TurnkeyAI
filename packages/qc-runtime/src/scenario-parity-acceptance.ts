@@ -71,7 +71,11 @@ const SCENARIOS: ScenarioParityAcceptanceScenarioDescriptor[] = [
     area: "browser",
     title: "browser spawn -> send -> resume",
     summary: "验证 browser continuity 在恢复后仍然挂在同一条执行链上。",
-    caseIds: ["browser-recovery-cold-reopen-outcome", "replay-console-browser-continuity-counts"],
+    caseIds: [
+      "browser-recovery-cold-reopen-outcome",
+      "browser-recovery-multi-attempt-chain-stays-aligned",
+      "replay-console-browser-continuity-counts",
+    ],
   },
   {
     scenarioId: "recovery-fallback-and-approval",
