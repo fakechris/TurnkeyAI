@@ -152,7 +152,9 @@ npx @turnkeyai/cli tui
 当前 TUI 也可以直接运行：
 
 - bounded regression harness
+- scenario parity acceptance harness
 - failure injection harness
+- unified validation catalog: `validation-cases` / `validation-run [suite[:item] ...]`
 
 模型配置默认会按这个顺序查找：
 

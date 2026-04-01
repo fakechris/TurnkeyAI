@@ -174,3 +174,46 @@ test("context compressor carries unresolved merge and approval language into sum
   assert.ok(threadSummary.openQuestions.some((entry) => /approve the follow-up/i.test(entry)));
   assert.ok(scratchpad.pendingWork.some((entry) => /need approval before the retry continues/i.test(entry)));
 });
+
+test("context compressor keeps blocker language in open questions and pending work", async () => {
+  const compressor = new DefaultContextCompressor();
+
+  const messages = [
+    {
+      messageId: "msg-user-blocker-1",
+      role: "user" as const,
+      name: "Chris",
+      content: "Browser blocker: the login checkpoint still blocks pricing review.",
+      createdAt: 1,
+    },
+    {
+      messageId: "msg-lead-blocker-1",
+      role: "assistant" as const,
+      roleId: "role-lead",
+      name: "Lead",
+      content: "Blocker remains until the login checkpoint is restored.",
+      createdAt: 2,
+    },
+    ...Array.from({ length: 16 }, (_, index) => ({
+      messageId: `msg-routine-${index + 1}`,
+      role: index % 2 === 0 ? ("assistant" as const) : ("user" as const),
+      name: index % 2 === 0 ? "Lead" : "Chris",
+      content: `Routine note ${index + 1}.`,
+      createdAt: index + 3,
+      ...(index % 2 === 0 ? { roleId: "role-lead" } : {}),
+    })),
+  ];
+
+  const threadSummary = await compressor.compressThread({
+    threadId: "thread-1",
+    messages,
+  });
+  const scratchpad = await compressor.compressRoleScratchpad({
+    threadId: "thread-1",
+    roleId: "role-lead",
+    messages,
+  });
+
+  assert.ok(threadSummary.openQuestions.some((entry) => /browser blocker/i.test(entry)));
+  assert.ok(scratchpad.pendingWork.some((entry) => /blocker remains until the login checkpoint is restored/i.test(entry)));
+});

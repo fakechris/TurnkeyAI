@@ -434,6 +434,26 @@ while (true) {
       continue;
     }
 
+    if (command === "acceptance-cases") {
+      await handleAcceptanceCasesCommand();
+      continue;
+    }
+
+    if (command === "acceptance-run") {
+      await handleAcceptanceRunCommand(args);
+      continue;
+    }
+
+    if (command === "validation-cases") {
+      await handleValidationCasesCommand();
+      continue;
+    }
+
+    if (command === "validation-run") {
+      await handleValidationRunCommand(args);
+      continue;
+    }
+
     if (command === "replay-incidents") {
       await handleReplayIncidentsCommand(args);
       continue;
@@ -596,6 +616,10 @@ function printHelp(): void {
   console.log("  regression-run [caseId ...]           run bounded regression harness");
   console.log("  failure-cases                         list built-in failure injection scenarios");
   console.log("  failure-run [scenarioId ...]          run failure injection harness");
+  console.log("  acceptance-cases                      list scenario parity acceptance suites");
+  console.log("  acceptance-run [scenarioId ...]       run scenario parity acceptance harness");
+  console.log("  validation-cases                      list unified validation suites and items");
+  console.log("  validation-run [suite[:item] ...]     run unified validation suites or individual items");
   console.log("  replay-incidents [limit] [action]     show replay incidents for current thread");
   console.log("  replay-group <groupId>                show one grouped replay task with its related replays");
   console.log("  replay-bundle <groupId>               show one incident bundle with timeline");
@@ -1611,6 +1635,146 @@ async function handleFailureRunCommand(raw: string): Promise<void> {
   );
 }
 
+async function handleAcceptanceCasesCommand(): Promise<void> {
+  printAcceptanceScenarioList(
+    (await getJson("/acceptance-cases")) as {
+      totalScenarios: number;
+      scenarios: Array<{
+        scenarioId: string;
+        area:
+          | "dispatch"
+          | "parallel"
+          | "browser"
+          | "recovery"
+          | "context"
+          | "governance"
+          | "operator"
+          | "observability";
+        title: string;
+        summary: string;
+        caseIds: string[];
+      }>;
+    }
+  );
+}
+
+async function handleAcceptanceRunCommand(raw: string): Promise<void> {
+  const scenarioIds = raw.split(/\s+/).filter(Boolean);
+  printAcceptanceRunResult(
+    (await postJson("/acceptance-cases/run", scenarioIds.length > 0 ? { scenarioIds } : {})) as {
+      totalScenarios: number;
+      passedScenarios: number;
+      failedScenarios: number;
+      totalCases: number;
+      passedCases: number;
+      failedCases: number;
+      scenarios: Array<{
+        scenarioId: string;
+        area:
+          | "dispatch"
+          | "parallel"
+          | "browser"
+          | "recovery"
+          | "context"
+          | "governance"
+          | "operator"
+          | "observability";
+        title: string;
+        summary: string;
+        caseIds: string[];
+        status: "passed" | "failed";
+        totalCases: number;
+        passedCases: number;
+        failedCases: number;
+        caseResults: Array<{
+          caseId: string;
+          title: string;
+          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+          summary: string;
+          status: "passed" | "failed";
+          details: string[];
+        }>;
+      }>;
+    }
+  );
+}
+
+async function handleValidationCasesCommand(): Promise<void> {
+  printValidationSuiteList(
+    (await getJson("/validation-cases")) as {
+      totalSuites: number;
+      totalItems: number;
+      suites: Array<{
+        suiteId: "regression" | "failure" | "acceptance";
+        title: string;
+        summary: string;
+        totalItems: number;
+        items: Array<{
+          suiteId: "regression" | "failure" | "acceptance";
+          itemId: string;
+          area: string;
+          title: string;
+          summary: string;
+          caseIds?: string[];
+        }>;
+      }>;
+    }
+  );
+}
+
+async function handleValidationRunCommand(raw: string): Promise<void> {
+  const selectors = raw.split(/\s+/).filter(Boolean);
+  try {
+    const payload = await postJson("/validation-cases/run", selectors.length > 0 ? { selectors } : {});
+    printValidationRunResult(
+      payload as {
+        totalSuites: number;
+        passedSuites: number;
+        failedSuites: number;
+        totalItems: number;
+        passedItems: number;
+        failedItems: number;
+        totalCases: number;
+        passedCases: number;
+        failedCases: number;
+        suites: Array<{
+          suiteId: "regression" | "failure" | "acceptance";
+          title: string;
+          summary: string;
+          totalItems: number;
+          passedItems: number;
+          failedItems: number;
+          totalCases: number;
+          passedCases: number;
+          failedCases: number;
+          items: Array<{
+            suiteId: "regression" | "failure" | "acceptance";
+            itemId: string;
+            area: string;
+            title: string;
+            summary: string;
+            status: "passed" | "failed";
+            totalCases: number;
+            passedCases: number;
+            failedCases: number;
+            caseResults: Array<{
+              caseId: string;
+              title: string;
+              area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+              summary: string;
+              status: "passed" | "failed";
+              details: string[];
+            }>;
+          }>;
+        }>;
+      }
+    );
+  } catch (error) {
+    console.log(`validation run failed: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+}
+
 async function handleReplayIncidentsCommand(raw: string): Promise<void> {
   const [first, second] = raw.split(" ").filter(Boolean);
   const params = new URLSearchParams();
@@ -2223,6 +2387,184 @@ function printFailureInjectionRunResult(payload: {
       console.log(`    - ${result.caseId}  status=${result.status}`);
       for (const detail of result.details) {
         console.log(`      ${detail}`);
+      }
+    }
+  }
+}
+
+function printAcceptanceScenarioList(payload: {
+  totalScenarios: number;
+  scenarios: Array<{
+    scenarioId: string;
+    area:
+      | "dispatch"
+      | "parallel"
+      | "browser"
+      | "recovery"
+      | "context"
+      | "governance"
+      | "operator"
+      | "observability";
+    title: string;
+    summary: string;
+    caseIds: string[];
+  }>;
+}): void {
+  console.log(`Acceptance Scenarios: ${payload.totalScenarios}`);
+  for (const scenario of payload.scenarios) {
+    console.log(`- ${scenario.scenarioId}  [${scenario.area}] ${scenario.title}`);
+    console.log(`  ${scenario.summary}`);
+    console.log(`  cases: ${scenario.caseIds.join(", ")}`);
+  }
+}
+
+function printAcceptanceRunResult(payload: {
+  totalScenarios: number;
+  passedScenarios: number;
+  failedScenarios: number;
+  totalCases: number;
+  passedCases: number;
+  failedCases: number;
+  scenarios: Array<{
+    scenarioId: string;
+    area:
+      | "dispatch"
+      | "parallel"
+      | "browser"
+      | "recovery"
+      | "context"
+      | "governance"
+      | "operator"
+      | "observability";
+    title: string;
+    summary: string;
+    caseIds: string[];
+    status: "passed" | "failed";
+    totalCases: number;
+    passedCases: number;
+    failedCases: number;
+    caseResults: Array<{
+      caseId: string;
+      title: string;
+      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+      summary: string;
+      status: "passed" | "failed";
+      details: string[];
+    }>;
+  }>;
+}): void {
+  console.log(
+    `Acceptance: ${payload.passedScenarios}/${payload.totalScenarios} scenarios passed, ${payload.passedCases}/${payload.totalCases} cases passed`
+  );
+  for (const scenario of payload.scenarios) {
+    console.log(
+      `- ${scenario.scenarioId}  [${scenario.area}] ${scenario.title}  status=${scenario.status}  cases=${scenario.passedCases}/${scenario.totalCases}`
+    );
+    console.log(`  ${scenario.summary}`);
+    if (scenario.failedCases > 0) {
+      console.log(`  failed cases: ${scenario.failedCases}`);
+    }
+    for (const result of scenario.caseResults) {
+      console.log(`    - ${result.caseId}  status=${result.status}`);
+      for (const detail of result.details) {
+        console.log(`      ${detail}`);
+      }
+    }
+  }
+}
+
+function printValidationSuiteList(payload: {
+  totalSuites: number;
+  totalItems: number;
+  suites: Array<{
+    suiteId: "regression" | "failure" | "acceptance";
+    title: string;
+    summary: string;
+    totalItems: number;
+    items: Array<{
+      suiteId: "regression" | "failure" | "acceptance";
+      itemId: string;
+      area: string;
+      title: string;
+      summary: string;
+      caseIds?: string[];
+    }>;
+  }>;
+}): void {
+  console.log(`Validation Suites: ${payload.totalSuites} suites, ${payload.totalItems} items`);
+  for (const suite of payload.suites) {
+    console.log(`- ${suite.suiteId}  ${suite.title}  items=${suite.totalItems}`);
+    console.log(`  ${suite.summary}`);
+    for (const item of suite.items) {
+      const selector = `${suite.suiteId}:${item.itemId}`;
+      console.log(`  - ${selector}  [${item.area}] ${item.title}`);
+      console.log(`    ${item.summary}`);
+      if (item.caseIds && item.caseIds.length > 0) {
+        console.log(`    cases: ${item.caseIds.join(", ")}`);
+      }
+    }
+  }
+}
+
+function printValidationRunResult(payload: {
+  totalSuites: number;
+  passedSuites: number;
+  failedSuites: number;
+  totalItems: number;
+  passedItems: number;
+  failedItems: number;
+  totalCases: number;
+  passedCases: number;
+  failedCases: number;
+  suites: Array<{
+    suiteId: "regression" | "failure" | "acceptance";
+    title: string;
+    summary: string;
+    totalItems: number;
+    passedItems: number;
+    failedItems: number;
+    totalCases: number;
+    passedCases: number;
+    failedCases: number;
+    items: Array<{
+      suiteId: "regression" | "failure" | "acceptance";
+      itemId: string;
+      area: string;
+      title: string;
+      summary: string;
+      status: "passed" | "failed";
+      totalCases: number;
+      passedCases: number;
+      failedCases: number;
+      caseResults: Array<{
+        caseId: string;
+        title: string;
+        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+        summary: string;
+        status: "passed" | "failed";
+        details: string[];
+      }>;
+    }>;
+  }>;
+}): void {
+  console.log(
+    `Validation: suites=${payload.passedSuites}/${payload.totalSuites}  items=${payload.passedItems}/${payload.totalItems}  cases=${payload.passedCases}/${payload.totalCases}`
+  );
+  for (const suite of payload.suites) {
+    console.log(
+      `- ${suite.suiteId}  ${suite.title}  status=${suite.failedItems === 0 ? "passed" : "failed"}  items=${suite.passedItems}/${suite.totalItems}  cases=${suite.passedCases}/${suite.totalCases}`
+    );
+    console.log(`  ${suite.summary}`);
+    for (const item of suite.items) {
+      console.log(
+        `  - ${suite.suiteId}:${item.itemId}  [${item.area}] ${item.title}  status=${item.status}  cases=${item.passedCases}/${item.totalCases}`
+      );
+      console.log(`    ${item.summary}`);
+      for (const result of item.caseResults) {
+        console.log(`    - ${result.caseId}  status=${result.status}`);
+        for (const detail of result.details) {
+          console.log(`      ${detail}`);
+        }
       }
     }
   }
