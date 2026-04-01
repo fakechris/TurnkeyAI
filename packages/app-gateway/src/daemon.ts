@@ -86,6 +86,10 @@ import {
 } from "@turnkeyai/qc-runtime/runtime-chain-inspection";
 import { DefaultPermissionGovernancePolicy } from "@turnkeyai/qc-runtime/permission-governance-policy";
 import { DefaultPromptAdmissionPolicy } from "@turnkeyai/qc-runtime/prompt-admission-policy";
+import {
+  listScenarioParityAcceptanceScenarios,
+  runScenarioParityAcceptanceSuite,
+} from "@turnkeyai/qc-runtime/scenario-parity-acceptance";
 import { CoordinationEngine } from "@turnkeyai/team-runtime/coordination-engine";
 import { DefaultContextStateMaintainer } from "@turnkeyai/team-runtime/context-state-maintainer";
 import { FileBackedTeamRouteMap } from "@turnkeyai/team-runtime/file-backed-team-route-map";
@@ -934,6 +938,22 @@ const server = http.createServer(async (req, res) => {
         ? body.scenarioIds.filter((value): value is string => typeof value === "string" && value.length > 0)
         : undefined;
       return sendJson(res, 200, runFailureInjectionSuite(scenarioIds));
+    }
+
+    if (req.method === "GET" && url.pathname === "/acceptance-cases") {
+      const scenarios = listScenarioParityAcceptanceScenarios();
+      return sendJson(res, 200, {
+        totalScenarios: scenarios.length,
+        scenarios,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/acceptance-cases/run") {
+      const body = await readJsonBody<{ scenarioIds?: string[] }>(req);
+      const scenarioIds = Array.isArray(body.scenarioIds)
+        ? body.scenarioIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+        : undefined;
+      return sendJson(res, 200, runScenarioParityAcceptanceSuite(scenarioIds));
     }
 
     if (req.method === "GET" && url.pathname === "/replay-incidents") {
