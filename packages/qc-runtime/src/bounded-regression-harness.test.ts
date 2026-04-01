@@ -34,6 +34,7 @@ test("bounded regression harness lists built-in cases", () => {
   assert.ok(cases.some((item) => item.caseId === "parallel-follow-up-summary-stays-open"));
   assert.ok(cases.some((item) => item.caseId === "recovery-approval-fallback-chain"));
   assert.ok(cases.some((item) => item.caseId === "replay-console-attention-stays-aligned"));
+  assert.ok(cases.some((item) => item.caseId === "replay-console-surfaces-workflow-state"));
   assert.ok(cases.some((item) => item.caseId === "parallel-follow-up-summary-closes-after-recovery"));
   assert.ok(cases.some((item) => item.caseId === "recovery-bundle-closes-after-approved-fallback"));
   assert.ok(cases.some((item) => item.caseId === "context-evidence-heavy-keeps-pending-work"));
@@ -67,6 +68,12 @@ test("bounded regression harness can run replay console browser continuity count
   assert.equal(result.results[0]?.status, "passed");
 });
 
+test("bounded regression harness can run replay console workflow surface case", () => {
+  const result = runBoundedRegressionSuite(["replay-console-surfaces-workflow-state"]);
+  assert.equal(result.totalCases, 1);
+  assert.equal(result.results[0]?.status, "passed");
+});
+
 test("bounded regression harness can run governance and parallel operator cases", () => {
   const result = runBoundedRegressionSuite([
     "parallel-flow-summary-highlights-shard-issues",
@@ -89,8 +96,9 @@ test("bounded regression harness can run extended parallel and recovery chain ca
     "recovery-approval-fallback-chain",
     "recovery-bundle-closes-after-approved-fallback",
     "replay-console-attention-stays-aligned",
+    "replay-console-surfaces-workflow-state",
   ]);
-  assert.equal(result.totalCases, 5);
+  assert.equal(result.totalCases, 6);
   assert.equal(result.failedCases, 0);
 });
 

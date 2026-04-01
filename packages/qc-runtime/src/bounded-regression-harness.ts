@@ -2557,6 +2557,99 @@ const BUILT_IN_CASES: RegressionCase[] = [
     },
   },
   {
+    caseId: "replay-console-surfaces-workflow-state",
+    title: "Replay console surfaces workflow and case-state summaries",
+    area: "recovery",
+    summary:
+      "Replay console should expose bundle-level workflow status, case state, and latest bundle summaries for actionable incidents.",
+    run() {
+      const records = [
+        {
+          replayId: "task-workflow:worker:worker:browser:task:task-workflow",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 10,
+          threadId: "thread-1",
+          taskId: "task-workflow",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "browser failed",
+          failure: {
+            category: "invalid_resume",
+            layer: "worker",
+            retryable: false,
+            message: "stale browser handle",
+            recommendedAction: "inspect",
+          },
+          metadata: {
+            payload: {
+              sessionId: "browser-session-workflow",
+              targetId: "target-workflow",
+              resumeMode: "warm",
+              targetResolution: "reconnect",
+            },
+          },
+        },
+        {
+          replayId: "task-workflow-follow:scheduled",
+          layer: "scheduled",
+          status: "completed",
+          recordedAt: 20,
+          threadId: "thread-1",
+          taskId: "task-workflow-follow",
+          summary: "recovery dispatched",
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-workflow",
+              attemptId: "recovery:task-workflow:attempt:1",
+              dispatchReplayId: "task-workflow-follow:scheduled",
+            },
+          },
+        },
+        {
+          replayId: "task-workflow-follow:worker:worker:browser:task:task-workflow-follow",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 30,
+          threadId: "thread-1",
+          taskId: "task-workflow-follow",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "manual approval required",
+          failure: {
+            category: "permission_denied",
+            layer: "worker",
+            retryable: false,
+            message: "manual approval required",
+            recommendedAction: "request_approval",
+          },
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-workflow",
+              attemptId: "recovery:task-workflow:attempt:1",
+              dispatchReplayId: "task-workflow-follow:scheduled",
+            },
+          },
+        },
+      ] satisfies ReplayRecord[];
+
+      const report = buildReplayConsoleReport(records, 5);
+      const rootBundle = report.latestBundles.find((bundle) => bundle.groupId === "task-workflow");
+      const details = [
+        `workflow=${report.workflowStatusCounts.manual_follow_up ?? 0}`,
+        `case=${report.caseStateCounts.waiting_manual ?? 0}`,
+        `bundleWorkflow=${rootBundle?.workflowStatus ?? "-"}`,
+        `bundleCase=${rootBundle?.caseState ?? "-"}`,
+      ];
+      const passed =
+        report.workflowStatusCounts.manual_follow_up === 1 &&
+        report.caseStateCounts.waiting_manual === 1 &&
+        rootBundle?.workflowStatus === "manual_follow_up" &&
+        rootBundle.caseState === "waiting_manual";
+      return buildResult(this, Boolean(passed), details);
+    },
+  },
+  {
     caseId: "recovery-bundle-closes-after-approved-fallback",
     title: "Approved fallback closes recovery bundle follow-up",
     area: "recovery",

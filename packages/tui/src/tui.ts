@@ -17,6 +17,7 @@ import type {
   RecoveryConsoleReport,
   ReplayConsoleReport,
   ReplayIncidentBundle,
+  ReplayTimelineEntry,
   RecoveryRun,
   RecoveryRunProgress,
   RecoveryRunTimelineEntry,
@@ -2028,8 +2029,21 @@ function printRecoveryConsole(report: RecoveryConsoleReport): void {
       if (run.browserSession?.resumeMode) {
         parts.push(`browser=${run.browserSession.resumeMode}`);
       }
+      if (run.targetLayer || run.targetWorker) {
+        parts.push(`target=${run.targetLayer ?? "main"}${run.targetWorker ? `/${run.targetWorker}` : ""}`);
+      }
+      const latestBrowserOutcome =
+        [...run.attempts]
+          .sort((left, right) => right.updatedAt - left.updatedAt)
+          .find((attempt) => attempt.browserOutcome)?.browserOutcome ?? null;
+      if (latestBrowserOutcome) {
+        parts.push(`outcome=${latestBrowserOutcome}`);
+      }
       console.log(`    - ${parts.join("  ")}`);
       console.log(`      ${run.latestSummary}`);
+      if (run.waitingReason) {
+        console.log(`      waiting: ${run.waitingReason}`);
+      }
     }
   }
 }
@@ -2234,6 +2248,116 @@ function printReplayBundle(bundle: ReplayIncidentBundle): void {
   if (bundle.recoveryTimeline?.length) {
     console.log(`  recovery timeline entries: ${bundle.recoveryTimeline.length}`);
   }
+  const workflowLogEntries = selectBundleWorkflowLogEntries(bundle);
+  if (workflowLogEntries.length > 0) {
+    console.log("  workflow log:");
+    for (const entry of workflowLogEntries) {
+      const parts = [
+        new Date(entry.recordedAt).toISOString(),
+        entry.source,
+        entry.kind,
+      ];
+      if (entry.status) {
+        parts.push(`status=${entry.status}`);
+      }
+      if (entry.action) {
+        parts.push(`action=${entry.action}`);
+      }
+      if (entry.attemptId) {
+        parts.push(`attempt=${entry.attemptId}`);
+      }
+      if (entry.groupId) {
+        parts.push(`group=${entry.groupId}`);
+      }
+      if (entry.layer) {
+        parts.push(`layer=${entry.layer}`);
+      }
+      if (entry.browserOutcome) {
+        parts.push(`browser=${entry.browserOutcome}`);
+      }
+      if (entry.failureCategory) {
+        parts.push(`failure=${entry.failureCategory}`);
+      }
+      console.log(`    - ${parts.join("  ")}`);
+      console.log(`      ${entry.summary}`);
+    }
+  }
+}
+
+function selectBundleWorkflowLogEntries(bundle: ReplayIncidentBundle): Array<{
+  recordedAt: number;
+  source: "event" | "replay";
+  kind: string;
+  summary: string;
+  status?: string;
+  action?: string;
+  attemptId?: string;
+  groupId?: string;
+  layer?: string;
+  browserOutcome?: string;
+  failureCategory?: string;
+}> {
+  const recoveryEntries = (bundle.recoveryTimeline ?? []).map((entry) => ({
+    recordedAt: entry.recordedAt,
+    source: entry.source,
+    kind: entry.kind,
+    summary: entry.summary,
+    ...(entry.status ? { status: entry.status } : {}),
+    ...(entry.action ? { action: entry.action } : {}),
+    ...(entry.attemptId ? { attemptId: entry.attemptId } : {}),
+    ...(entry.groupId ? { groupId: entry.groupId } : {}),
+    ...(entry.layer ? { layer: entry.layer } : {}),
+    ...(entry.browserOutcome ? { browserOutcome: entry.browserOutcome } : {}),
+    ...(entry.failure?.category ? { failureCategory: entry.failure.category } : {}),
+  }));
+  if (recoveryEntries.length > 0) {
+    return recoveryEntries.slice(-6);
+  }
+
+  const replayEntries = [
+    ...bundle.recoveryDispatches.map((record) => mapBundleReplayLogEntry(buildReplayBundleLogEntry(record))),
+    ...bundle.followUpTimeline.map((entry) => mapBundleReplayLogEntry(entry)),
+  ].sort((left, right) => left.recordedAt - right.recordedAt);
+  return replayEntries.slice(-6);
+}
+
+function mapBundleReplayLogEntry(entry: ReplayTimelineEntry): {
+  recordedAt: number;
+  source: "replay";
+  kind: string;
+  summary: string;
+  status?: string;
+  attemptId?: string;
+  groupId?: string;
+  layer?: string;
+  failureCategory?: string;
+} {
+  return {
+    recordedAt: entry.recordedAt,
+    source: "replay",
+    kind: entry.layer,
+    summary: entry.summary,
+    ...(entry.status ? { status: entry.status } : {}),
+    ...(entry.attemptId ? { attemptId: entry.attemptId } : {}),
+    groupId: entry.groupId,
+    layer: entry.layer,
+    ...(entry.failure?.category ? { failureCategory: entry.failure.category } : {}),
+  };
+}
+
+function buildReplayBundleLogEntry(record: ReplayIncidentBundle["recoveryDispatches"][number]): ReplayTimelineEntry {
+  return {
+    replayId: record.replayId,
+    groupId: record.taskId ?? record.replayId,
+    threadId: record.threadId,
+    recordedAt: record.recordedAt,
+    layer: record.layer,
+    status: record.status,
+    summary: record.summary,
+    ...(record.flowId ? { flowId: record.flowId } : {}),
+    ...(record.roleId ? { roleId: record.roleId } : {}),
+    ...(record.workerType ? { workerType: record.workerType } : {}),
+  };
 }
 
 function printReplayConsole(payload: ReplayConsoleReport): void {
@@ -2250,12 +2374,56 @@ function printReplayConsole(payload: ReplayConsoleReport): void {
         .join(", ")}`
     );
   }
+  if (Object.keys(payload.workflowStatusCounts).length > 0) {
+    console.log(
+      `  workflow status: ${Object.entries(payload.workflowStatusCounts)
+        .map(([status, count]) => `${status}=${count}`)
+        .join(", ")}`
+    );
+  }
+  if (Object.keys(payload.caseStateCounts).length > 0) {
+    console.log(
+      `  case state: ${Object.entries(payload.caseStateCounts)
+        .map(([state, count]) => `${state}=${count}`)
+        .join(", ")}`
+    );
+  }
   if (Object.keys(payload.browserContinuityCounts).length > 0) {
     console.log(
       `  browser continuity: ${Object.entries(payload.browserContinuityCounts)
         .map(([state, count]) => `${state}=${count}`)
         .join(", ")}`
     );
+  }
+  if (payload.latestBundles.length > 0) {
+    console.log("  latest bundles:");
+    for (const bundle of payload.latestBundles) {
+      const parts = [
+        bundle.groupId,
+        `next=${describeRecoveryAction(bundle.nextAction)}`,
+        `latest=${bundle.latestStatus}`,
+        `auto=${bundle.autoDispatchReady ? "yes" : "no"}`,
+      ];
+      if (bundle.caseState) {
+        parts.push(`case=${bundle.caseState}`);
+      }
+      if (bundle.workflowStatus) {
+        parts.push(`workflow=${bundle.workflowStatus}`);
+      }
+      if (bundle.browserContinuityState) {
+        parts.push(`browser=${bundle.browserContinuityState}`);
+      }
+      if (bundle.targetLayer || bundle.targetWorker) {
+        parts.push(`target=${bundle.targetLayer ?? "main"}${bundle.targetWorker ? `/${bundle.targetWorker}` : ""}`);
+      }
+      console.log(`    - ${parts.join("  ")}`);
+      if (bundle.caseHeadline) {
+        console.log(`      ${bundle.caseHeadline}`);
+      }
+      if (bundle.workflowSummary) {
+        console.log(`      ${bundle.workflowSummary}`);
+      }
+    }
   }
   if (payload.latestIncidents.length > 0) {
     console.log("  latest incidents:");

@@ -1269,10 +1269,25 @@ export interface ReplayConsoleReport {
   recoveredGroups: number;
   attentionCount: number;
   actionCounts: Partial<Record<ReplayRecoveryPlan["nextAction"], number>>;
+  workflowStatusCounts: Partial<Record<NonNullable<ReplayIncidentBundle["recoveryWorkflow"]>["status"], number>>;
+  caseStateCounts: Partial<Record<OperatorCaseState, number>>;
   browserContinuityCounts: Partial<Record<ReplayBrowserContinuitySummary["state"], number>>;
   layerCounts: Partial<Record<ReplayLayer, number>>;
   failureCounts: Partial<Record<FailureCategory, number>>;
   latestIncidents: ReplayRecoveryPlan[];
+  latestBundles: Array<{
+    groupId: string;
+    latestStatus: ReplayTaskSummary["latestStatus"];
+    nextAction: ReplayRecoveryPlan["nextAction"];
+    autoDispatchReady: boolean;
+    caseState?: OperatorCaseState;
+    workflowStatus?: NonNullable<ReplayIncidentBundle["recoveryWorkflow"]>["status"];
+    workflowSummary?: string;
+    caseHeadline?: string;
+    browserContinuityState?: ReplayBrowserContinuitySummary["state"];
+    targetLayer?: ReplayRecoveryPlan["targetLayer"];
+    targetWorker?: ReplayRecoveryPlan["targetWorker"];
+  }>;
   latestGroups: ReplayTaskSummary[];
 }
 
