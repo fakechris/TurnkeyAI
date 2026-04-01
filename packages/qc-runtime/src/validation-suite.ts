@@ -86,6 +86,13 @@ interface ValidationSelector {
   itemId?: string;
 }
 
+export class ValidationSelectorError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ValidationSelectorError";
+  }
+}
+
 const SUITE_METADATA: Record<ValidationSuiteId, { title: string; summary: string }> = {
   regression: {
     title: "Bounded Regression",
@@ -152,7 +159,11 @@ function buildValidationSuiteRunResults(selectors?: ValidationSelector[]): Valid
 
 function buildRegressionSuiteRunResult(selectors: ValidationSelector[]): ValidationRunSuiteResult {
   const allCases = listBoundedRegressionCases();
-  const selectedCaseIds = selectors.length > 0 ? selectors.flatMap((selector) => (selector.itemId ? [selector.itemId] : [])) : undefined;
+  const selectedCaseIds = resolveSelectedItemIds({
+    selectors,
+    validItemIds: allCases.map((item) => item.caseId),
+    suiteLabel: "regression",
+  });
   const result = runBoundedRegressionSuite(selectedCaseIds);
   const resultsById = new Map(result.results.map((item) => [item.caseId, item]));
   const descriptors = allCases
@@ -168,13 +179,21 @@ function buildRegressionSuiteRunResult(selectors: ValidationSelector[]): Validat
 }
 
 function buildFailureSuiteRunResult(selectors: ValidationSelector[]): ValidationRunSuiteResult {
-  const selectedScenarioIds = selectors.length > 0 ? selectors.flatMap((selector) => (selector.itemId ? [selector.itemId] : [])) : undefined;
+  const selectedScenarioIds = resolveSelectedItemIds({
+    selectors,
+    validItemIds: listFailureInjectionScenarios().map((item) => item.scenarioId),
+    suiteLabel: "failure",
+  });
   const result = runFailureInjectionSuite(selectedScenarioIds);
   return finalizeRunSuite("failure", result.scenarios.map(mapFailureRunItem));
 }
 
 function buildAcceptanceSuiteRunResult(selectors: ValidationSelector[]): ValidationRunSuiteResult {
-  const selectedScenarioIds = selectors.length > 0 ? selectors.flatMap((selector) => (selector.itemId ? [selector.itemId] : [])) : undefined;
+  const selectedScenarioIds = resolveSelectedItemIds({
+    selectors,
+    validItemIds: listScenarioParityAcceptanceScenarios().map((item) => item.scenarioId),
+    suiteLabel: "acceptance",
+  });
   const result = runScenarioParityAcceptanceSuite(selectedScenarioIds);
   return finalizeRunSuite("acceptance", result.scenarios.map(mapAcceptanceRunItem));
 }
@@ -212,12 +231,36 @@ function parseValidationSelectors(selectors?: string[]): ValidationSelector[] | 
     const [maybeSuiteId, ...itemParts] = selector.split(":");
     const rawSuiteId = maybeSuiteId ?? "";
     if (!isValidationSuiteId(rawSuiteId)) {
-      throw new Error(`unknown validation suite: ${rawSuiteId}`);
+      throw new ValidationSelectorError(`unknown validation suite: ${rawSuiteId}`);
     }
     const itemId = itemParts.join(":").trim();
     parsed.push(itemId ? { suiteId: rawSuiteId, itemId } : { suiteId: rawSuiteId });
   }
   return parsed.length > 0 ? dedupeSelectors(parsed) : undefined;
+}
+
+function resolveSelectedItemIds(input: {
+  selectors: ValidationSelector[];
+  validItemIds: string[];
+  suiteLabel: string;
+}): string[] | undefined {
+  if (input.selectors.length === 0) {
+    return undefined;
+  }
+
+  if (input.selectors.some((selector) => !selector.itemId)) {
+    return undefined;
+  }
+
+  const selectedItemIds = input.selectors.flatMap((selector) => (selector.itemId ? [selector.itemId] : []));
+  const invalidItemIds = selectedItemIds.filter((itemId) => !input.validItemIds.includes(itemId));
+  if (invalidItemIds.length > 0) {
+    throw new ValidationSelectorError(
+      `unknown ${input.suiteLabel} validation items: ${invalidItemIds.join(", ")}`
+    );
+  }
+
+  return selectedItemIds;
 }
 
 function dedupeSelectors(selectors: ValidationSelector[]): ValidationSelector[] {

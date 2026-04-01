@@ -1248,14 +1248,14 @@ test("default role prompt policy keeps an older blocker turn when recent turns a
       role: "assistant" as const,
       roleId: "role-lead",
       name: "Lead",
-      content: "Browser blocker: login expired before the pricing follow-up could continue.",
+      content: "Browser blocker: login expired before the pricing review could proceed.",
       createdAt: 0,
     },
     ...Array.from({ length: 7 }, (_, index) => ({
       messageId: `msg-blocker-${index + 1}`,
       role: index % 2 === 0 ? ("assistant" as const) : ("user" as const),
       name: index % 2 === 0 ? "Lead" : "Chris",
-      content: `Routine blocker turn ${index + 1}`,
+      content: `Routine note ${index + 1}`,
       createdAt: index + 1,
       ...(index % 2 === 0 ? { roleId: "role-lead" } : {}),
     })),
@@ -1272,8 +1272,8 @@ test("default role prompt policy keeps an older blocker turn when recent turns a
     },
   });
 
-  assert.match(packet.taskPrompt, /Browser blocker: login expired before the pricing follow-up could continue/);
-  assert.match(packet.taskPrompt, /Routine blocker turn 7/);
+  assert.match(packet.taskPrompt, /Browser blocker: login expired before the pricing review could proceed/);
+  assert.match(packet.taskPrompt, /Routine note 7/);
 });
 
 test("default role prompt policy keeps both older user approval ask and assistant merge blocker under recent-turn compaction", async () => {

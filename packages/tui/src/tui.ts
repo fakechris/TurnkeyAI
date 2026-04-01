@@ -1724,54 +1724,55 @@ async function handleValidationCasesCommand(): Promise<void> {
 
 async function handleValidationRunCommand(raw: string): Promise<void> {
   const selectors = raw.split(/\s+/).filter(Boolean);
-  const payload = await postJson("/validation-cases/run", selectors.length > 0 ? { selectors } : {});
-  if (payload && typeof payload === "object" && "error" in (payload as Record<string, unknown>)) {
-    console.log(`validation run failed: ${String((payload as { error?: unknown }).error ?? "unknown error")}`);
-    return;
-  }
-  printValidationRunResult(
-    payload as {
-      totalSuites: number;
-      passedSuites: number;
-      failedSuites: number;
-      totalItems: number;
-      passedItems: number;
-      failedItems: number;
-      totalCases: number;
-      passedCases: number;
-      failedCases: number;
-      suites: Array<{
-        suiteId: "regression" | "failure" | "acceptance";
-        title: string;
-        summary: string;
+  try {
+    const payload = await postJson("/validation-cases/run", selectors.length > 0 ? { selectors } : {});
+    printValidationRunResult(
+      payload as {
+        totalSuites: number;
+        passedSuites: number;
+        failedSuites: number;
         totalItems: number;
         passedItems: number;
         failedItems: number;
         totalCases: number;
         passedCases: number;
         failedCases: number;
-        items: Array<{
+        suites: Array<{
           suiteId: "regression" | "failure" | "acceptance";
-          itemId: string;
-          area: string;
           title: string;
           summary: string;
-          status: "passed" | "failed";
+          totalItems: number;
+          passedItems: number;
+          failedItems: number;
           totalCases: number;
           passedCases: number;
           failedCases: number;
-          caseResults: Array<{
-            caseId: string;
+          items: Array<{
+            suiteId: "regression" | "failure" | "acceptance";
+            itemId: string;
+            area: string;
             title: string;
-            area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
             summary: string;
             status: "passed" | "failed";
-            details: string[];
+            totalCases: number;
+            passedCases: number;
+            failedCases: number;
+            caseResults: Array<{
+              caseId: string;
+              title: string;
+              area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+              summary: string;
+              status: "passed" | "failed";
+              details: string[];
+            }>;
           }>;
         }>;
-      }>;
-    }
-  );
+      }
+    );
+  } catch (error) {
+    console.log(`validation run failed: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
 }
 
 async function handleReplayIncidentsCommand(raw: string): Promise<void> {

@@ -467,8 +467,8 @@ test("role memory resolver treats blocker wording as continuation recall", async
     await threadSessionMemoryStore.put({
       threadId: "thread-1",
       updatedAt: 20,
-      activeTasks: ["Continue the supplier review."],
-      openQuestions: ["Browser blocker: login expired before the pricing capture can continue."],
+      activeTasks: ["Supplier review is paused on the login checkpoint."],
+      openQuestions: ["Browser blocker: login expired before the pricing capture."],
       recentDecisions: [],
       constraints: [],
       continuityNotes: ["Keep the browser blocker visible until the login checkpoint is restored."],
@@ -487,7 +487,7 @@ test("role memory resolver treats blocker wording as continuation recall", async
     const hits = await resolver.retrieveMemory({
       threadId: "thread-1",
       roleId: "role-operator",
-      queryText: "What blocker remains before we continue?",
+      queryText: "What blocker remains before we proceed?",
     });
 
     assert.ok(hits.some((hit) => /browser blocker/i.test(hit.content)));

@@ -183,7 +183,7 @@ test("context compressor keeps blocker language in open questions and pending wo
       messageId: "msg-user-blocker-1",
       role: "user" as const,
       name: "Chris",
-      content: "Browser blocker: the login checkpoint still blocks the pricing follow-up.",
+      content: "Browser blocker: the login checkpoint still blocks pricing review.",
       createdAt: 1,
     },
     {
@@ -191,9 +191,17 @@ test("context compressor keeps blocker language in open questions and pending wo
       role: "assistant" as const,
       roleId: "role-lead",
       name: "Lead",
-      content: "Track this blocker and continue once the login checkpoint is restored.",
+      content: "Blocker remains until the login checkpoint is restored.",
       createdAt: 2,
     },
+    ...Array.from({ length: 16 }, (_, index) => ({
+      messageId: `msg-routine-${index + 1}`,
+      role: index % 2 === 0 ? ("assistant" as const) : ("user" as const),
+      name: index % 2 === 0 ? "Lead" : "Chris",
+      content: `Routine note ${index + 1}.`,
+      createdAt: index + 3,
+      ...(index % 2 === 0 ? { roleId: "role-lead" } : {}),
+    })),
   ];
 
   const threadSummary = await compressor.compressThread({
@@ -207,5 +215,5 @@ test("context compressor keeps blocker language in open questions and pending wo
   });
 
   assert.ok(threadSummary.openQuestions.some((entry) => /browser blocker/i.test(entry)));
-  assert.ok(scratchpad.pendingWork.some((entry) => /track this blocker/i.test(entry)));
+  assert.ok(scratchpad.pendingWork.some((entry) => /blocker remains until the login checkpoint is restored/i.test(entry)));
 });

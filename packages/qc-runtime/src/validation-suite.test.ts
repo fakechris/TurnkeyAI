@@ -55,9 +55,17 @@ test("validation suite can run an entire selected suite", () => {
 
   assert.equal(result.totalSuites, 1);
   assert.equal(result.suites[0]?.suiteId, "failure");
+  assert.equal((result.suites[0]?.totalItems ?? 0) > 0, true);
   assert.equal(result.suites[0]?.totalItems, result.suites[0]?.items.length);
 });
 
 test("validation suite rejects unknown suite selectors", () => {
   assert.throws(() => runValidationSuites(["unknown:item"]), /unknown validation suite/);
+});
+
+test("validation suite rejects unknown item selectors inside a known suite", () => {
+  assert.throws(
+    () => runValidationSuites(["acceptance:not-a-real-scenario"]),
+    /unknown acceptance validation items/
+  );
 });

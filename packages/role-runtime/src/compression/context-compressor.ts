@@ -246,8 +246,8 @@ function selectRecentMessages(messages: TeamMessageSummary[], limit: number): Te
     return messages;
   }
 
-  const tail = messages.slice(-Math.max(4, limit - 1));
-  const preservedEarlier = [...messages.slice(0, -tail.length)]
+  const fallbackTail = messages.slice(-Math.max(4, limit - 1));
+  const preservedEarlier = [...messages.slice(0, -fallbackTail.length)]
     .reverse()
     .filter((message) => isContinuationRelevant(message.content))
     .slice(0, 2);
@@ -256,9 +256,14 @@ function selectRecentMessages(messages: TeamMessageSummary[], limit: number): Te
     return messages.slice(-limit);
   }
 
-  const selected = [...tail, ...preservedEarlier]
-    .sort((left, right) => left.createdAt - right.createdAt)
-    .slice(-limit);
+  const tailSize = Math.max(limit - preservedEarlier.length, 1);
+  const tail = messages.slice(-tailSize);
+  const selected = [...preservedEarlier, ...tail]
+    .filter(
+      (message, index, all) =>
+        all.findIndex((candidate) => candidate.messageId === message.messageId) === index
+    )
+    .sort((left, right) => left.createdAt - right.createdAt);
   return selected;
 }
 
@@ -369,7 +374,7 @@ function extractWaitingOn(messages: TeamMessageSummary[]): string | null {
 }
 
 function isContinuationRelevant(content: string): boolean {
-  return /\b(pending|waiting on|blocked|follow up|next step|remaining|must|budget|deadline|need)\b/i.test(content);
+  return /\b(pending|waiting on|blocked|blocker|follow up|next step|remaining|must|budget|deadline|need)\b/i.test(content);
 }
 
 function truncate(content: string, maxChars = 160): string {

@@ -93,6 +93,7 @@ import {
 import {
   listValidationSuites,
   runValidationSuites,
+  ValidationSelectorError,
 } from "@turnkeyai/qc-runtime/validation-suite";
 import { CoordinationEngine } from "@turnkeyai/team-runtime/coordination-engine";
 import { DefaultContextStateMaintainer } from "@turnkeyai/team-runtime/context-state-maintainer";
@@ -957,6 +958,16 @@ const server = http.createServer(async (req, res) => {
       const scenarioIds = Array.isArray(body.scenarioIds)
         ? body.scenarioIds.filter((value): value is string => typeof value === "string" && value.length > 0)
         : undefined;
+      if (scenarioIds && scenarioIds.length > 0) {
+        const validScenarioIds = new Set(listScenarioParityAcceptanceScenarios().map((scenario) => scenario.scenarioId));
+        const invalidScenarioIds = scenarioIds.filter((scenarioId) => !validScenarioIds.has(scenarioId));
+        if (invalidScenarioIds.length > 0) {
+          return sendJson(res, 400, {
+            error: "unknown scenario ids",
+            invalidScenarioIds,
+          });
+        }
+      }
       return sendJson(res, 200, runScenarioParityAcceptanceSuite(scenarioIds));
     }
 
@@ -977,7 +988,10 @@ const server = http.createServer(async (req, res) => {
       try {
         return sendJson(res, 200, runValidationSuites(selectors));
       } catch (error) {
-        return sendJson(res, 400, { error: error instanceof Error ? error.message : "invalid validation selectors" });
+        if (error instanceof ValidationSelectorError) {
+          return sendJson(res, 400, { error: error.message });
+        }
+        throw error;
       }
     }
 
