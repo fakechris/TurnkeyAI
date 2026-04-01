@@ -9,6 +9,7 @@ on:
 jobs:
   publish:
     name: publish
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -29,6 +30,9 @@ jobs:
 
       - name: Build publishable CLI package
         run: npm run build
+
+      - name: Validate CLI package
+        run: npm run pack:cli
 
       - name: Publish @turnkeyai/cli to npm
         run: npm publish --workspace @turnkeyai/cli --access public
