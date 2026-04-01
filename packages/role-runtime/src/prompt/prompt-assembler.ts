@@ -472,13 +472,16 @@ function pickSalientEarlierTurns(
 function recentTurnSalienceScore(message: TeamMessageSummary): number {
   let score = 0;
   if (
-    /\b(pending|waiting|blocked|next step|remaining|unresolved|outstanding|approval|missing|conflict|duplicate)\b/i.test(
+    /\b(pending|waiting|blocked|blocker|next step|remaining|unresolved|outstanding|approval|missing|conflict|duplicate)\b/i.test(
       message.content
     )
   ) {
     score += 3;
   }
-  if (/\bmerge\b/i.test(message.content) && /\b(missing|conflict|duplicate|follow[- ]?up|blocked|approval)\b/i.test(message.content)) {
+  if (
+    /\bmerge\b/i.test(message.content) &&
+    /\b(missing|conflict|duplicate|follow[- ]?up|blocked|blocker|approval)\b/i.test(message.content)
+  ) {
     score += 2;
   }
   if (/\b(follow[- ]?up|retry|fallback|resume|inspect)\b/i.test(message.content)) {

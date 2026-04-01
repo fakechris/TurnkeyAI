@@ -452,3 +452,47 @@ test("role memory resolver keeps approval and merge memory reachable through sem
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("role memory resolver treats blocker wording as continuation recall", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "role-memory-resolver-blocker-"));
+
+  try {
+    const threadSummaryStore = new FileThreadSummaryStore({ rootDir: path.join(tempDir, "summary") });
+    const threadMemoryStore = new FileThreadMemoryStore({ rootDir: path.join(tempDir, "memory") });
+    const threadSessionMemoryStore = new FileThreadSessionMemoryStore({ rootDir: path.join(tempDir, "session-memory") });
+    const threadJournalStore = new FileThreadJournalStore({ rootDir: path.join(tempDir, "journal") });
+    const roleScratchpadStore = new FileRoleScratchpadStore({ rootDir: path.join(tempDir, "scratchpad") });
+    const workerEvidenceDigestStore = new FileWorkerEvidenceDigestStore({ rootDir: path.join(tempDir, "worker") });
+
+    await threadSessionMemoryStore.put({
+      threadId: "thread-1",
+      updatedAt: 20,
+      activeTasks: ["Continue the supplier review."],
+      openQuestions: ["Browser blocker: login expired before the pricing capture can continue."],
+      recentDecisions: [],
+      constraints: [],
+      continuityNotes: ["Keep the browser blocker visible until the login checkpoint is restored."],
+      latestJournalEntries: [],
+    });
+
+    const resolver = new DefaultRoleMemoryResolver({
+      threadSummaryStore,
+      threadMemoryStore,
+      threadSessionMemoryStore,
+      threadJournalStore,
+      roleScratchpadStore,
+      workerEvidenceDigestStore,
+    });
+
+    const hits = await resolver.retrieveMemory({
+      threadId: "thread-1",
+      roleId: "role-operator",
+      queryText: "What blocker remains before we continue?",
+    });
+
+    assert.ok(hits.some((hit) => /browser blocker/i.test(hit.content)));
+    assert.equal(hits[0]?.source, "session-memory");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});

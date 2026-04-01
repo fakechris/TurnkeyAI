@@ -174,3 +174,38 @@ test("context compressor carries unresolved merge and approval language into sum
   assert.ok(threadSummary.openQuestions.some((entry) => /approve the follow-up/i.test(entry)));
   assert.ok(scratchpad.pendingWork.some((entry) => /need approval before the retry continues/i.test(entry)));
 });
+
+test("context compressor keeps blocker language in open questions and pending work", async () => {
+  const compressor = new DefaultContextCompressor();
+
+  const messages = [
+    {
+      messageId: "msg-user-blocker-1",
+      role: "user" as const,
+      name: "Chris",
+      content: "Browser blocker: the login checkpoint still blocks the pricing follow-up.",
+      createdAt: 1,
+    },
+    {
+      messageId: "msg-lead-blocker-1",
+      role: "assistant" as const,
+      roleId: "role-lead",
+      name: "Lead",
+      content: "Track this blocker and continue once the login checkpoint is restored.",
+      createdAt: 2,
+    },
+  ];
+
+  const threadSummary = await compressor.compressThread({
+    threadId: "thread-1",
+    messages,
+  });
+  const scratchpad = await compressor.compressRoleScratchpad({
+    threadId: "thread-1",
+    roleId: "role-lead",
+    messages,
+  });
+
+  assert.ok(threadSummary.openQuestions.some((entry) => /browser blocker/i.test(entry)));
+  assert.ok(scratchpad.pendingWork.some((entry) => /track this blocker/i.test(entry)));
+});

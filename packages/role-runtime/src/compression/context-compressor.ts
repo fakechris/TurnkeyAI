@@ -283,7 +283,9 @@ function extractDecisions(messages: TeamMessageSummary[]): string[] {
 function extractOpenQuestions(messages: TeamMessageSummary[]): string[] {
   return messages
     .map((message) => message.content.trim())
-    .filter((content) => content.includes("?") || /\b(unresolved|missing|conflict|duplicate|follow[- ]?up|approval)\b/i.test(content))
+    .filter(
+      (content) => content.includes("?") || /\b(unresolved|missing|conflict|duplicate|follow[- ]?up|approval|blocker)\b/i.test(content)
+    )
     .map((content) => truncate(content));
 }
 
@@ -292,7 +294,7 @@ function extractPendingWork(messages: TeamMessageSummary[]): string[] {
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => message.content.trim())
     .filter((content) =>
-      /\b(please|need|should|track|check|compare|follow up|review|confirm|next step|pending|remaining|todo|to do|awaiting|unresolved|missing|conflict|duplicate|merge|approval)\b/i.test(
+      /\b(please|need|should|track|check|compare|follow up|review|confirm|next step|pending|remaining|todo|to do|awaiting|unresolved|missing|conflict|duplicate|merge|approval|blocker)\b/i.test(
         content
       )
     )
