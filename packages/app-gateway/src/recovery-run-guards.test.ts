@@ -61,3 +61,8 @@ test("buildRecoveryRunActionConflict exposes gate and allowed actions for operat
 test("buildRecoveryRunActionConflict returns null when the action is allowed", () => {
   assert.equal(buildRecoveryRunActionConflict(buildRun("failed"), "retry"), null);
 });
+
+test("buildRecoveryRunActionConflict filters internal dispatch from operator-facing actions", () => {
+  const conflict = buildRecoveryRunActionConflict(buildRun("planned"), "approve", "approval is not available");
+  assert.deepEqual(conflict?.allowedActions, ["retry", "fallback", "resume", "reject"]);
+});

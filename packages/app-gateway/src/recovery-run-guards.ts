@@ -40,9 +40,10 @@ export function validateRecoveryRunAction(run: RecoveryRun, action: RecoveryRunA
 
 export function buildRecoveryRunActionConflict(
   run: RecoveryRun,
-  action: RecoveryRunAction
+  action: RecoveryRunAction,
+  errorOverride?: string
 ): RecoveryRunActionConflict | null {
-  const error = validateRecoveryRunAction(run, action);
+  const error = errorOverride ?? validateRecoveryRunAction(run, action);
   if (!error) {
     return null;
   }
@@ -51,6 +52,6 @@ export function buildRecoveryRunActionConflict(
     error,
     recoveryRun: run,
     currentGate: describeRecoveryRunGate(run.status),
-    allowedActions: listAllowedRecoveryRunActions(run.status),
+    allowedActions: listAllowedRecoveryRunActions(run.status).filter((candidate) => candidate !== "dispatch"),
   };
 }

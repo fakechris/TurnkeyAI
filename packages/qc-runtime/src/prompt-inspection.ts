@@ -9,6 +9,7 @@ import type {
 const PROMPT_BOUNDARY_KINDS = new Set<PromptBoundaryKind>(["prompt_compaction", "request_envelope_reduction"]);
 
 export function buildPromptConsoleReport(events: RuntimeProgressEvent[], limit = 10): PromptConsoleReport {
+  const normalizedLimit = Number.isFinite(limit) ? Math.max(0, Math.trunc(limit)) : 10;
   const boundaryKindCounts: PromptConsoleReport["boundaryKindCounts"] = {};
   const reductionLevelCounts: PromptConsoleReport["reductionLevelCounts"] = {};
   const modelCounts: PromptConsoleReport["modelCounts"] = {};
@@ -63,7 +64,7 @@ export function buildPromptConsoleReport(events: RuntimeProgressEvent[], limit =
     roleCounts,
     compactedSegmentCounts,
     uniqueAssemblyFingerprintCount: fingerprints.size,
-    latestBoundaries: promptBoundaries.slice(0, limit),
+    latestBoundaries: promptBoundaries.slice(0, normalizedLimit),
   };
 }
 

@@ -2433,7 +2433,7 @@ function selectBundleWorkflowLogEntries(bundle: ReplayIncidentBundle): Array<{
     ...(entry.failure?.category ? { failureCategory: entry.failure.category } : {}),
   }));
   if (recoveryEntries.length > 0) {
-    return recoveryEntries.slice(-6);
+    return [...recoveryEntries].sort((left, right) => left.recordedAt - right.recordedAt).slice(-6);
   }
 
   const replayEntries = [

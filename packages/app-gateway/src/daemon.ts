@@ -774,7 +774,7 @@ const server = http.createServer(async (req, res) => {
       if (limit == null) {
         return sendJson(res, 400, { error: "limit must be a positive integer" });
       }
-      const progressEvents = await runtimeProgressStore.listByThread(threadId, Math.max(limit * 20, 200));
+      const progressEvents = await runtimeProgressStore.listByThread(threadId);
       return sendJson(res, 200, buildPromptConsoleReport(progressEvents, limit));
     }
 
@@ -2444,45 +2444,37 @@ async function executeRecoveryRunAction(input: {
     }
 
     if (!recoveryPlan && (input.action === "dispatch" || input.action === "retry" || input.action === "fallback" || input.action === "resume")) {
-    return {
-      statusCode: 409,
-      body: {
-        error: "recovery can no longer be resumed automatically",
-        recoveryRun: syncedRun,
-      },
-    };
-  }
+      return {
+        statusCode: 409,
+        body: buildRecoveryRunActionConflict(
+          syncedRun,
+          input.action,
+          "recovery can no longer be resumed automatically"
+        )!,
+      };
+    }
 
     if (!syncedRun.roleId) {
-    return {
-      statusCode: 409,
-      body: {
-        error: "recovery run is missing target role",
-        recoveryRun: syncedRun,
-      },
-    };
-  }
+      return {
+        statusCode: 409,
+        body: buildRecoveryRunActionConflict(syncedRun, input.action, "recovery run is missing target role")!,
+      };
+    }
 
     const dispatchNextAction = mapRecoveryRunActionToNextAction(input.action, recoveryPlan, syncedRun);
     if (!dispatchNextAction) {
-    return {
-      statusCode: 409,
-      body: {
-        error: "recovery action is not dispatchable",
-        recoveryRun: syncedRun,
-      },
-    };
-  }
+      return {
+        statusCode: 409,
+        body: buildRecoveryRunActionConflict(syncedRun, input.action, "recovery action is not dispatchable")!,
+      };
+    }
 
     if ((dispatchNextAction === "retry_same_layer" || dispatchNextAction === "fallback_transport" || dispatchNextAction === "auto_resume") && syncedRun.targetLayer === "worker" && !syncedRun.targetWorker) {
-    return {
-      statusCode: 409,
-      body: {
-        error: "recovery run is missing target worker",
-        recoveryRun: syncedRun,
-      },
-    };
-  }
+      return {
+        statusCode: 409,
+        body: buildRecoveryRunActionConflict(syncedRun, input.action, "recovery run is missing target worker")!,
+      };
+    }
 
     const browserSession = deriveRecoveryBrowserSessionHint(synced.records, syncedRun);
     const attemptId = `${syncedRun.recoveryRunId}:attempt:${syncedRun.attempts.length + 1}`;

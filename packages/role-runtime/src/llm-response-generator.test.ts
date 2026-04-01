@@ -114,6 +114,8 @@ test("llm role response generator retries with a smaller request envelope after 
     "worker-evidence",
   ]);
   assert.equal(progressEvents[0]?.metadata?.["assemblyFingerprint"], "fp");
+  assert.deepEqual(progressEvents[0]?.metadata?.["usedArtifacts"], []);
+  assert.equal((progressEvents[0]?.metadata?.["envelopeHint"] as { toolResultCount?: number } | undefined)?.toolResultCount, 0);
 });
 
 test("llm role response generator forwards model chain and model ref routing", async () => {
@@ -333,6 +335,10 @@ function buildPacket(): RolePromptPacket {
       compactedSegments: [],
       assemblyFingerprint: "fp",
       usedArtifacts: artifactIds,
+      envelopeHint: {
+        toolResultCount: 8,
+        toolResultBytes: 4_096,
+      },
     },
   };
 }

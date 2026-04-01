@@ -121,6 +121,16 @@ test("prompt inspection limits latest prompt boundaries after sorting by recency
   assert.equal(report.uniqueAssemblyFingerprintCount, 3);
 });
 
+test("prompt inspection normalizes non-finite and negative limits", () => {
+  const events: RuntimeProgressEvent[] = [
+    buildPromptBoundary("progress-1", 10, "prompt_compaction", "fp-1"),
+    buildPromptBoundary("progress-2", 20, "prompt_compaction", "fp-2"),
+  ];
+
+  assert.equal(buildPromptConsoleReport(events, -3).latestBoundaries.length, 0);
+  assert.equal(buildPromptConsoleReport(events, Number.NaN).latestBoundaries.length, 2);
+});
+
 function buildPromptBoundary(
   progressId: string,
   recordedAt: number,

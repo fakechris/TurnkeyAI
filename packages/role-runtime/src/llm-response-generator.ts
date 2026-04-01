@@ -31,6 +31,12 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
           omittedSections: string[];
         }
       | undefined;
+    let reductionSnapshot:
+      | ({
+          level: RequestEnvelopeReductionLevel;
+          omittedSections: string[];
+        } & ReductionEnvelopeSnapshot)
+      | undefined;
 
     await this.recordAssemblyBoundarySafely(input.activation, input.packet, selection);
 
@@ -68,7 +74,13 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
             level,
             omittedSections: reduced.omittedSections,
           };
-          await this.recordReductionBoundarySafely(input.activation, input.packet, selection, reduction);
+          reductionSnapshot = {
+            level,
+            omittedSections: reduced.omittedSections,
+            artifactIds: reduced.artifactIds,
+            ...(reduced.envelopeHint ? { envelopeHint: reduced.envelopeHint } : {}),
+          };
+          await this.recordReductionBoundarySafely(input.activation, input.packet, selection, reductionSnapshot);
           break;
         } catch (retryError) {
           if (!(retryError instanceof RequestEnvelopeOverflowError)) {
@@ -180,7 +192,7 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
     reduction: {
       level: RequestEnvelopeReductionLevel;
       omittedSections: string[];
-    }
+    } & ReductionEnvelopeSnapshot
   ): Promise<void> {
     if (!this.runtimeProgressRecorder) {
       return;
@@ -213,11 +225,11 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
           : {}),
         ...(packet.promptAssembly?.sectionOrder ? { sectionOrder: packet.promptAssembly.sectionOrder } : {}),
         ...(packet.promptAssembly?.tokenEstimate ? { tokenEstimate: packet.promptAssembly.tokenEstimate } : {}),
-        ...(packet.promptAssembly?.envelopeHint ? { envelopeHint: packet.promptAssembly.envelopeHint } : {}),
+        ...(reduction.envelopeHint ? { envelopeHint: reduction.envelopeHint } : {}),
         reductionLevel: reduction.level,
         omittedSections: reduction.omittedSections,
         compactedSegments: packet.promptAssembly?.compactedSegments ?? [],
-        usedArtifacts: packet.promptAssembly?.usedArtifacts ?? [],
+        usedArtifacts: reduction.artifactIds,
       },
     });
   }
@@ -232,7 +244,7 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
     reduction: {
       level: RequestEnvelopeReductionLevel;
       omittedSections: string[];
-    }
+    } & ReductionEnvelopeSnapshot
   ): Promise<void> {
     try {
       await this.recordReductionBoundary(activation, packet, selection, reduction);
@@ -246,6 +258,20 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
       });
     }
   }
+}
+
+interface ReductionEnvelopeSnapshot {
+  artifactIds: string[];
+  envelopeHint?: {
+    toolResultCount?: number;
+    toolResultBytes?: number;
+    inlineAttachmentBytes?: number;
+    inlineImageCount?: number;
+    inlineImageBytes?: number;
+    inlinePdfCount?: number;
+    inlinePdfBytes?: number;
+    multimodalPartCount?: number;
+  };
 }
 
 function buildGatewayInput(input: {
