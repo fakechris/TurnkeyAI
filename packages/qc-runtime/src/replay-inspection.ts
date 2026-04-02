@@ -200,6 +200,7 @@ export function buildReplayConsoleReport(records: ReplayRecord[], limit = 10): R
   const caseStateCounts: ReplayConsoleReport["caseStateCounts"] = {};
   const browserContinuityCounts: ReplayConsoleReport["browserContinuityCounts"] = {};
   const resolvedRootGroupIds = new Set<string>();
+  const resolvedBundles: ReplayIncidentBundle[] = [];
 
   for (const recovery of recoveries) {
     actionCounts[recovery.nextAction] = (actionCounts[recovery.nextAction] ?? 0) + 1;
@@ -227,8 +228,15 @@ export function buildReplayConsoleReport(records: ReplayRecord[], limit = 10): R
     const bundle = buildReplayIncidentBundle(records, rootGroupId);
     if (bundle?.caseState === "resolved") {
       resolvedRootGroupIds.add(rootGroupId);
+      resolvedBundles.push(bundle);
     }
   }
+
+  resolvedBundles.sort((left, right) => {
+    const leftAt = left.browserContinuity?.latestRecordedAt ?? left.group.latestRecordedAt;
+    const rightAt = right.browserContinuity?.latestRecordedAt ?? right.group.latestRecordedAt;
+    return rightAt - leftAt;
+  });
 
   return {
     totalReplays: report.totalReplays,
@@ -245,23 +253,28 @@ export function buildReplayConsoleReport(records: ReplayRecord[], limit = 10): R
     latestIncidents: recoveries.slice(0, limit),
     latestBundles: recoveries
       .slice(0, limit)
-      .map((recovery) => {
-        const bundle = bundleByGroupId.get(recovery.groupId) ?? null;
-        return {
-          groupId: recovery.groupId,
-          latestStatus: recovery.latestStatus,
-          nextAction: recovery.nextAction,
-          autoDispatchReady: recovery.autoDispatchReady,
-          ...(bundle?.caseState ? { caseState: bundle.caseState } : {}),
-          ...(bundle?.recoveryWorkflow?.status ? { workflowStatus: bundle.recoveryWorkflow.status } : {}),
-          ...(bundle?.recoveryWorkflow?.summary ? { workflowSummary: bundle.recoveryWorkflow.summary } : {}),
-          ...(bundle?.caseHeadline ? { caseHeadline: bundle.caseHeadline } : {}),
-          ...(bundle?.browserContinuity?.state ? { browserContinuityState: bundle.browserContinuity.state } : {}),
-          ...(recovery.targetLayer ? { targetLayer: recovery.targetLayer } : {}),
-          ...(recovery.targetWorker ? { targetWorker: recovery.targetWorker } : {}),
-        };
-      }),
+      .map((recovery) => buildReplayConsoleBundleEntry(bundleByGroupId.get(recovery.groupId) ?? null, recovery)),
+    latestResolvedBundles: resolvedBundles.slice(0, limit).map((bundle) => buildReplayConsoleBundleEntry(bundle, null)),
     latestGroups: report.groups.slice(0, limit),
+  };
+}
+
+function buildReplayConsoleBundleEntry(
+  bundle: ReplayIncidentBundle | null,
+  recovery: ReplayRecoveryPlan | null
+): ReplayConsoleReport["latestBundles"][number] {
+  return {
+    groupId: bundle?.group.groupId ?? recovery?.groupId ?? "unknown",
+    latestStatus: bundle?.group.latestStatus ?? recovery?.latestStatus ?? "failed",
+    nextAction: bundle?.recoveryWorkflow?.nextAction ?? recovery?.nextAction ?? "none",
+    autoDispatchReady: recovery?.autoDispatchReady ?? false,
+    ...(bundle?.caseState ? { caseState: bundle.caseState } : {}),
+    ...(bundle?.recoveryWorkflow?.status ? { workflowStatus: bundle.recoveryWorkflow.status } : {}),
+    ...(bundle?.recoveryWorkflow?.summary ? { workflowSummary: bundle.recoveryWorkflow.summary } : {}),
+    ...(bundle?.caseHeadline ? { caseHeadline: bundle.caseHeadline } : {}),
+    ...(bundle?.browserContinuity?.state ? { browserContinuityState: bundle.browserContinuity.state } : {}),
+    ...(recovery?.targetLayer ? { targetLayer: recovery.targetLayer } : {}),
+    ...(recovery?.targetWorker ? { targetWorker: recovery.targetWorker } : {}),
   };
 }
 
@@ -269,9 +282,22 @@ export function listActionableReplayIncidents(
   records: ReplayRecord[],
   report = buildReplayInspectionReport(records)
 ): ReplayTaskSummary[] {
+  const replayParentByGroupId = buildReplayParentByGroupId(records);
   return report.incidents.filter((group) => {
     const bundle = buildReplayIncidentBundle(records, group.groupId);
-    return bundle?.recoveryWorkflow?.status !== "recovered";
+    if (bundle?.recoveryWorkflow?.status === "recovered") {
+      return false;
+    }
+
+    const rootGroupId = resolveReplayRootGroupId(group.groupId, replayParentByGroupId);
+    if (rootGroupId !== group.groupId) {
+      const rootBundle = buildReplayIncidentBundle(records, rootGroupId);
+      if (rootBundle?.recoveryWorkflow?.status === "recovered") {
+        return false;
+      }
+    }
+
+    return true;
   });
 }
 

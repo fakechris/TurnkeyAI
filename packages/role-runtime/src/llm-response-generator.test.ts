@@ -115,6 +115,11 @@ test("llm role response generator retries with a smaller request envelope after 
   ]);
   assert.equal(progressEvents[0]?.metadata?.["assemblyFingerprint"], "fp");
   assert.deepEqual(progressEvents[0]?.metadata?.["usedArtifacts"], []);
+  assert.equal(
+    ((progressEvents[0]?.metadata?.["contextDiagnostics"] as { continuity?: { carriesPendingWork?: boolean } } | undefined)
+      ?.continuity?.carriesPendingWork),
+    true
+  );
   assert.equal((progressEvents[0]?.metadata?.["envelopeHint"] as { toolResultCount?: number } | undefined)?.toolResultCount, 0);
 });
 
@@ -189,6 +194,11 @@ test("llm role response generator emits a boundary event when prompt assembly is
   assert.equal(progressEvents[0]?.metadata?.["modelId"], "claude-test");
   assert.equal(progressEvents[0]?.metadata?.["assemblyFingerprint"], "fp");
   assert.deepEqual(progressEvents[0]?.metadata?.["compactedSegments"], ["recent-turns", "worker-evidence"]);
+  assert.equal(
+    ((progressEvents[0]?.metadata?.["contextDiagnostics"] as { retrievedMemory?: { packedCount?: number } } | undefined)
+      ?.retrievedMemory?.packedCount),
+    2
+  );
 });
 
 test("llm role response generator ignores boundary recorder failures", async () => {
@@ -335,6 +345,48 @@ function buildPacket(): RolePromptPacket {
       compactedSegments: [],
       assemblyFingerprint: "fp",
       usedArtifacts: artifactIds,
+      contextDiagnostics: {
+        continuity: {
+          hasThreadSummary: true,
+          hasSessionMemory: true,
+          hasRoleScratchpad: true,
+          hasContinuationContext: true,
+          carriesPendingWork: true,
+          carriesWaitingOn: true,
+          carriesOpenQuestions: true,
+          carriesDecisionOrConstraint: true,
+        },
+        recentTurns: {
+          availableCount: 3,
+          selectedCount: 3,
+          packedCount: 3,
+          salientEarlierCount: 1,
+          compacted: false,
+        },
+        retrievedMemory: {
+          availableCount: 4,
+          selectedCount: 3,
+          packedCount: 2,
+          compacted: false,
+          userPreferenceCount: 0,
+          threadMemoryCount: 2,
+          sessionMemoryCount: 1,
+          knowledgeNoteCount: 1,
+          journalNoteCount: 0,
+        },
+        workerEvidence: {
+          totalCount: 3,
+          admittedCount: 2,
+          selectedCount: 2,
+          packedCount: 1,
+          compacted: false,
+          promotableCount: 1,
+          observationalCount: 1,
+          fullCount: 1,
+          summaryOnlyCount: 1,
+          continuationRelevantCount: 1,
+        },
+      },
       envelopeHint: {
         toolResultCount: 8,
         toolResultBytes: 4_096,

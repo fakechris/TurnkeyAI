@@ -16,9 +16,22 @@ export function buildPromptConsoleReport(events: RuntimeProgressEvent[], limit =
   const modelChainCounts: PromptConsoleReport["modelChainCounts"] = {};
   const roleCounts: PromptConsoleReport["roleCounts"] = {};
   const compactedSegmentCounts: PromptConsoleReport["compactedSegmentCounts"] = {};
+  const continuityCarryForwardCounts: PromptConsoleReport["continuityCarryForwardCounts"] = {
+    continuationContext: 0,
+    pendingWork: 0,
+    waitingOn: 0,
+    openQuestions: 0,
+    decisionsOrConstraints: 0,
+  };
   const fingerprints = new Set<string>();
   let compactionCount = 0;
   let reductionCount = 0;
+  let totalRecentTurnsSelected = 0;
+  let totalRecentTurnsPacked = 0;
+  let totalRetrievedMemoryCandidates = 0;
+  let totalRetrievedMemoryPacked = 0;
+  let totalWorkerEvidenceCandidates = 0;
+  let totalWorkerEvidencePacked = 0;
 
   const promptBoundaries = events
     .filter(isPromptBoundaryEvent)
@@ -51,6 +64,29 @@ export function buildPromptConsoleReport(events: RuntimeProgressEvent[], limit =
     for (const segment of boundary.compactedSegments ?? []) {
       compactedSegmentCounts[segment] = (compactedSegmentCounts[segment] ?? 0) + 1;
     }
+    if (boundary.contextDiagnostics) {
+      totalRecentTurnsSelected += boundary.contextDiagnostics.recentTurns.selectedCount;
+      totalRecentTurnsPacked += boundary.contextDiagnostics.recentTurns.packedCount;
+      totalRetrievedMemoryCandidates += boundary.contextDiagnostics.retrievedMemory.selectedCount;
+      totalRetrievedMemoryPacked += boundary.contextDiagnostics.retrievedMemory.packedCount;
+      totalWorkerEvidenceCandidates += boundary.contextDiagnostics.workerEvidence.selectedCount;
+      totalWorkerEvidencePacked += boundary.contextDiagnostics.workerEvidence.packedCount;
+      if (boundary.contextDiagnostics.continuity.hasContinuationContext) {
+        continuityCarryForwardCounts.continuationContext += 1;
+      }
+      if (boundary.contextDiagnostics.continuity.carriesPendingWork) {
+        continuityCarryForwardCounts.pendingWork += 1;
+      }
+      if (boundary.contextDiagnostics.continuity.carriesWaitingOn) {
+        continuityCarryForwardCounts.waitingOn += 1;
+      }
+      if (boundary.contextDiagnostics.continuity.carriesOpenQuestions) {
+        continuityCarryForwardCounts.openQuestions += 1;
+      }
+      if (boundary.contextDiagnostics.continuity.carriesDecisionOrConstraint) {
+        continuityCarryForwardCounts.decisionsOrConstraints += 1;
+      }
+    }
   }
 
   return {
@@ -64,6 +100,13 @@ export function buildPromptConsoleReport(events: RuntimeProgressEvent[], limit =
     roleCounts,
     compactedSegmentCounts,
     uniqueAssemblyFingerprintCount: fingerprints.size,
+    totalRecentTurnsSelected,
+    totalRecentTurnsPacked,
+    totalRetrievedMemoryCandidates,
+    totalRetrievedMemoryPacked,
+    totalWorkerEvidenceCandidates,
+    totalWorkerEvidencePacked,
+    continuityCarryForwardCounts,
     latestBoundaries: promptBoundaries.slice(0, normalizedLimit),
   };
 }
@@ -101,6 +144,7 @@ function mapPromptBoundaryEntry(event: RuntimeProgressEvent): PromptBoundaryEntr
     ...(Array.isArray(metadata.omittedSections) ? { omittedSections: metadata.omittedSections.filter(isString) } : {}),
     ...(Array.isArray(metadata.usedArtifacts) ? { usedArtifacts: metadata.usedArtifacts.filter(isString) } : {}),
     ...(isTokenEstimate(metadata.tokenEstimate) ? { tokenEstimate: metadata.tokenEstimate } : {}),
+    ...(isContextDiagnostics(metadata.contextDiagnostics) ? { contextDiagnostics: metadata.contextDiagnostics } : {}),
     ...(isEnvelopeHint(metadata.envelopeHint) ? { envelopeHint: metadata.envelopeHint } : {}),
   };
 }
@@ -142,4 +186,71 @@ function isEnvelopeHint(
     const candidate = (value as Record<string, unknown>)[key];
     return candidate == null || typeof candidate === "number";
   });
+}
+
+function isContextDiagnostics(
+  value: unknown
+): value is NonNullable<PromptBoundaryEntry["contextDiagnostics"]> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const diagnostics = value as Record<string, unknown>;
+  const continuity = diagnostics.continuity;
+  const recentTurns = diagnostics.recentTurns;
+  const retrievedMemory = diagnostics.retrievedMemory;
+  const workerEvidence = diagnostics.workerEvidence;
+  return (
+    isBooleanRecord(continuity, [
+      "hasThreadSummary",
+      "hasSessionMemory",
+      "hasRoleScratchpad",
+      "hasContinuationContext",
+      "carriesPendingWork",
+      "carriesWaitingOn",
+      "carriesOpenQuestions",
+      "carriesDecisionOrConstraint",
+    ]) &&
+    isNumberRecord(recentTurns, ["availableCount", "selectedCount", "packedCount", "salientEarlierCount"]) &&
+    typeof (recentTurns as Record<string, unknown>).compacted === "boolean" &&
+    isNumberRecord(retrievedMemory, [
+      "availableCount",
+      "selectedCount",
+      "packedCount",
+      "userPreferenceCount",
+      "threadMemoryCount",
+      "sessionMemoryCount",
+      "knowledgeNoteCount",
+      "journalNoteCount",
+    ]) &&
+    typeof (retrievedMemory as Record<string, unknown>).compacted === "boolean" &&
+    isNumberRecord(workerEvidence, [
+      "totalCount",
+      "admittedCount",
+      "selectedCount",
+      "packedCount",
+      "promotableCount",
+      "observationalCount",
+      "fullCount",
+      "summaryOnlyCount",
+      "continuationRelevantCount",
+    ]) &&
+    typeof (workerEvidence as Record<string, unknown>).compacted === "boolean"
+  );
+}
+
+function isNumberRecord(value: unknown, keys: string[]): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return keys.every((key) => typeof (value as Record<string, unknown>)[key] === "number");
+}
+
+function isBooleanRecord(value: unknown, keys: string[]): boolean {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return keys.every((key) => typeof (value as Record<string, unknown>)[key] === "boolean");
 }

@@ -11,6 +11,7 @@ import type {
   RoleId,
   RolePromptPacketLike,
   RoleSlot,
+  PromptAssemblyContextDiagnostics,
   WorkerKind,
 } from "@turnkeyai/core-types/team";
 import {
@@ -40,6 +41,7 @@ export interface RolePromptPacket extends RolePromptPacketLike {
     compactedSegments: string[];
     assemblyFingerprint: string;
     usedArtifacts: string[];
+    contextDiagnostics: PromptAssemblyContextDiagnostics;
     envelopeHint?: {
       toolResultCount?: number;
       toolResultBytes?: number;
@@ -226,6 +228,7 @@ export class DefaultRolePromptPolicy implements RolePromptPolicy {
         compactedSegments: assembly.compactedSegments,
         assemblyFingerprint: assembly.assemblyFingerprint,
         usedArtifacts: assembly.usedArtifacts,
+        contextDiagnostics: assembly.contextDiagnostics,
         ...(assembly.envelopeHint ? { envelopeHint: assembly.envelopeHint } : {}),
       },
     };

@@ -18,6 +18,11 @@ test("scenario parity acceptance suite lists scenario families", () => {
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "governance-success-fallback-approval"));
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "operator-cross-surface-consistency"));
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "observability-live-chain-visibility"));
+  assert.ok(
+    scenarios
+      .find((scenario) => scenario.scenarioId === "browser-spawn-send-resume")
+      ?.caseIds.includes("browser-recovery-multi-attempt-chain-stays-aligned")
+  );
 });
 
 test("scenario parity acceptance suite passes all scenario families", () => {
