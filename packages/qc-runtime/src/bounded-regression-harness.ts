@@ -920,6 +920,48 @@ const BUILT_IN_CASES: RegressionCase[] = [
             modelChainId: "reasoning_primary",
             assemblyFingerprint: "fp-prompt",
             compactedSegments: ["recent-turns", "worker-evidence"],
+            contextDiagnostics: {
+              continuity: {
+                hasThreadSummary: true,
+                hasSessionMemory: true,
+                hasRoleScratchpad: true,
+                hasContinuationContext: true,
+                carriesPendingWork: true,
+                carriesWaitingOn: true,
+                carriesOpenQuestions: true,
+                carriesDecisionOrConstraint: true,
+              },
+              recentTurns: {
+                availableCount: 7,
+                selectedCount: 5,
+                packedCount: 3,
+                salientEarlierCount: 1,
+                compacted: true,
+              },
+              retrievedMemory: {
+                availableCount: 5,
+                selectedCount: 4,
+                packedCount: 2,
+                compacted: true,
+                userPreferenceCount: 1,
+                threadMemoryCount: 2,
+                sessionMemoryCount: 1,
+                knowledgeNoteCount: 1,
+                journalNoteCount: 0,
+              },
+              workerEvidence: {
+                totalCount: 3,
+                admittedCount: 2,
+                selectedCount: 2,
+                packedCount: 1,
+                compacted: true,
+                promotableCount: 1,
+                observationalCount: 1,
+                fullCount: 1,
+                summaryOnlyCount: 1,
+                continuationRelevantCount: 1,
+              },
+            },
           },
         },
         {
@@ -944,6 +986,48 @@ const BUILT_IN_CASES: RegressionCase[] = [
             compactedSegments: ["recent-turns"],
             reductionLevel: "minimal",
             omittedSections: ["worker-evidence"],
+            contextDiagnostics: {
+              continuity: {
+                hasThreadSummary: true,
+                hasSessionMemory: true,
+                hasRoleScratchpad: true,
+                hasContinuationContext: false,
+                carriesPendingWork: true,
+                carriesWaitingOn: true,
+                carriesOpenQuestions: false,
+                carriesDecisionOrConstraint: true,
+              },
+              recentTurns: {
+                availableCount: 7,
+                selectedCount: 5,
+                packedCount: 2,
+                salientEarlierCount: 1,
+                compacted: true,
+              },
+              retrievedMemory: {
+                availableCount: 5,
+                selectedCount: 4,
+                packedCount: 1,
+                compacted: true,
+                userPreferenceCount: 1,
+                threadMemoryCount: 2,
+                sessionMemoryCount: 1,
+                knowledgeNoteCount: 1,
+                journalNoteCount: 0,
+              },
+              workerEvidence: {
+                totalCount: 3,
+                admittedCount: 2,
+                selectedCount: 1,
+                packedCount: 0,
+                compacted: true,
+                promotableCount: 1,
+                observationalCount: 1,
+                fullCount: 1,
+                summaryOnlyCount: 1,
+                continuationRelevantCount: 1,
+              },
+            },
           },
         },
       ];
@@ -955,6 +1039,8 @@ const BUILT_IN_CASES: RegressionCase[] = [
         `model=${report.modelCounts["gpt-5"] ?? 0}`,
         `chain=${report.modelChainCounts.reasoning_primary ?? 0}`,
         `fp=${report.uniqueAssemblyFingerprintCount}`,
+        `memory=${report.totalRetrievedMemoryPacked}/${report.totalRetrievedMemoryCandidates}`,
+        `carry-forward=${report.continuityCarryForwardCounts.pendingWork}`,
       ];
       const passed =
         report.totalBoundaries === 2 &&
@@ -964,7 +1050,11 @@ const BUILT_IN_CASES: RegressionCase[] = [
         report.modelChainCounts.reasoning_primary === 2 &&
         report.uniqueAssemblyFingerprintCount === 1 &&
         report.reductionLevelCounts.minimal === 1 &&
-        report.compactedSegmentCounts["recent-turns"] === 2;
+        report.compactedSegmentCounts["recent-turns"] === 2 &&
+        report.totalRetrievedMemoryCandidates === 8 &&
+        report.totalRetrievedMemoryPacked === 3 &&
+        report.continuityCarryForwardCounts.pendingWork === 2 &&
+        report.continuityCarryForwardCounts.waitingOn === 2;
       return buildResult(this, passed, details);
     },
   },

@@ -155,6 +155,9 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
           : {}),
         ...(packet.promptAssembly?.sectionOrder ? { sectionOrder: packet.promptAssembly.sectionOrder } : {}),
         ...(packet.promptAssembly?.tokenEstimate ? { tokenEstimate: packet.promptAssembly.tokenEstimate } : {}),
+        ...(packet.promptAssembly?.contextDiagnostics
+          ? { contextDiagnostics: packet.promptAssembly.contextDiagnostics }
+          : {}),
         ...(packet.promptAssembly?.envelopeHint ? { envelopeHint: packet.promptAssembly.envelopeHint } : {}),
         compactedSegments,
         usedArtifacts: packet.promptAssembly?.usedArtifacts ?? [],
@@ -225,6 +228,9 @@ export class LLMRoleResponseGenerator implements RoleResponseGenerator {
           : {}),
         ...(packet.promptAssembly?.sectionOrder ? { sectionOrder: packet.promptAssembly.sectionOrder } : {}),
         ...(packet.promptAssembly?.tokenEstimate ? { tokenEstimate: packet.promptAssembly.tokenEstimate } : {}),
+        ...(packet.promptAssembly?.contextDiagnostics
+          ? { contextDiagnostics: packet.promptAssembly.contextDiagnostics }
+          : {}),
         ...(reduction.envelopeHint ? { envelopeHint: reduction.envelopeHint } : {}),
         reductionLevel: reduction.level,
         omittedSections: reduction.omittedSections,

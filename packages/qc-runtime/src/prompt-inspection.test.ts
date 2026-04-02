@@ -48,6 +48,48 @@ test("prompt inspection summarizes prompt compaction and reduction boundaries", 
           totalProjectedTokens: 10_200,
           overBudget: false,
         },
+        contextDiagnostics: {
+          continuity: {
+            hasThreadSummary: true,
+            hasSessionMemory: true,
+            hasRoleScratchpad: true,
+            hasContinuationContext: true,
+            carriesPendingWork: true,
+            carriesWaitingOn: true,
+            carriesOpenQuestions: true,
+            carriesDecisionOrConstraint: true,
+          },
+          recentTurns: {
+            availableCount: 7,
+            selectedCount: 5,
+            packedCount: 3,
+            salientEarlierCount: 1,
+            compacted: true,
+          },
+          retrievedMemory: {
+            availableCount: 6,
+            selectedCount: 4,
+            packedCount: 2,
+            compacted: true,
+            userPreferenceCount: 1,
+            threadMemoryCount: 2,
+            sessionMemoryCount: 1,
+            knowledgeNoteCount: 1,
+            journalNoteCount: 1,
+          },
+          workerEvidence: {
+            totalCount: 4,
+            admittedCount: 3,
+            selectedCount: 2,
+            packedCount: 1,
+            compacted: true,
+            promotableCount: 2,
+            observationalCount: 1,
+            fullCount: 1,
+            summaryOnlyCount: 2,
+            continuationRelevantCount: 1,
+          },
+        },
         envelopeHint: {
           toolResultCount: 3,
           toolResultBytes: 1_024,
@@ -83,6 +125,48 @@ test("prompt inspection summarizes prompt compaction and reduction boundaries", 
           totalProjectedTokens: 10_200,
           overBudget: false,
         },
+        contextDiagnostics: {
+          continuity: {
+            hasThreadSummary: true,
+            hasSessionMemory: true,
+            hasRoleScratchpad: true,
+            hasContinuationContext: false,
+            carriesPendingWork: true,
+            carriesWaitingOn: true,
+            carriesOpenQuestions: false,
+            carriesDecisionOrConstraint: true,
+          },
+          recentTurns: {
+            availableCount: 7,
+            selectedCount: 5,
+            packedCount: 2,
+            salientEarlierCount: 1,
+            compacted: true,
+          },
+          retrievedMemory: {
+            availableCount: 6,
+            selectedCount: 4,
+            packedCount: 1,
+            compacted: true,
+            userPreferenceCount: 1,
+            threadMemoryCount: 2,
+            sessionMemoryCount: 1,
+            knowledgeNoteCount: 1,
+            journalNoteCount: 1,
+          },
+          workerEvidence: {
+            totalCount: 4,
+            admittedCount: 3,
+            selectedCount: 1,
+            packedCount: 0,
+            compacted: true,
+            promotableCount: 2,
+            observationalCount: 1,
+            fullCount: 1,
+            summaryOnlyCount: 2,
+            continuationRelevantCount: 1,
+          },
+        },
       },
     },
   ]);
@@ -99,10 +183,22 @@ test("prompt inspection summarizes prompt compaction and reduction boundaries", 
   assert.equal(report.compactedSegmentCounts["recent-turns"], 2);
   assert.equal(report.compactedSegmentCounts["worker-evidence"], 1);
   assert.equal(report.uniqueAssemblyFingerprintCount, 1);
+  assert.equal(report.totalRecentTurnsSelected, 10);
+  assert.equal(report.totalRecentTurnsPacked, 5);
+  assert.equal(report.totalRetrievedMemoryCandidates, 8);
+  assert.equal(report.totalRetrievedMemoryPacked, 3);
+  assert.equal(report.totalWorkerEvidenceCandidates, 3);
+  assert.equal(report.totalWorkerEvidencePacked, 1);
+  assert.equal(report.continuityCarryForwardCounts.continuationContext, 1);
+  assert.equal(report.continuityCarryForwardCounts.pendingWork, 2);
+  assert.equal(report.continuityCarryForwardCounts.waitingOn, 2);
+  assert.equal(report.continuityCarryForwardCounts.openQuestions, 1);
+  assert.equal(report.continuityCarryForwardCounts.decisionsOrConstraints, 2);
   assert.equal(report.latestBoundaries[0]?.boundaryKind, "request_envelope_reduction");
   assert.deepEqual(report.latestBoundaries[0]?.omittedSections, ["recent-turns", "worker-evidence"]);
   assert.equal(report.latestBoundaries[1]?.boundaryKind, "prompt_compaction");
   assert.deepEqual(report.latestBoundaries[1]?.usedArtifacts, ["artifact-1", "artifact-2"]);
+  assert.equal(report.latestBoundaries[1]?.contextDiagnostics?.retrievedMemory.packedCount, 2);
 });
 
 test("prompt inspection limits latest prompt boundaries after sorting by recency", () => {
@@ -153,6 +249,48 @@ function buildPromptBoundary(
       modelChainId: "reasoning_primary",
       assemblyFingerprint,
       compactedSegments: ["recent-turns"],
+      contextDiagnostics: {
+        continuity: {
+          hasThreadSummary: false,
+          hasSessionMemory: false,
+          hasRoleScratchpad: false,
+          hasContinuationContext: false,
+          carriesPendingWork: false,
+          carriesWaitingOn: false,
+          carriesOpenQuestions: false,
+          carriesDecisionOrConstraint: false,
+        },
+        recentTurns: {
+          availableCount: 3,
+          selectedCount: 2,
+          packedCount: 2,
+          salientEarlierCount: 0,
+          compacted: true,
+        },
+        retrievedMemory: {
+          availableCount: 0,
+          selectedCount: 0,
+          packedCount: 0,
+          compacted: false,
+          userPreferenceCount: 0,
+          threadMemoryCount: 0,
+          sessionMemoryCount: 0,
+          knowledgeNoteCount: 0,
+          journalNoteCount: 0,
+        },
+        workerEvidence: {
+          totalCount: 0,
+          admittedCount: 0,
+          selectedCount: 0,
+          packedCount: 0,
+          compacted: false,
+          promotableCount: 0,
+          observationalCount: 0,
+          fullCount: 0,
+          summaryOnlyCount: 0,
+          continuationRelevantCount: 0,
+        },
+      },
       ...(boundaryKind === "request_envelope_reduction" ? { reductionLevel: "compact" } : {}),
     },
   };

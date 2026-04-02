@@ -165,6 +165,7 @@ npx @turnkeyai/cli tui
 - `soak-run [scenarioId ...]`
 
 `replay-console` 会同时显示仍需处理的 `latest bundles`，以及最近已收敛的 `latest resolved bundles`，便于把当前告警和刚恢复的 case 分开看。
+`prompt-console` 现在会额外汇总 recent-turn / retrieved-memory / worker-evidence 的实际打包数量，以及 pending / waiting / open-question / decision-or-constraint 的 carry-forward 情况，方便直接看高压上下文下哪些信息被保住了。
 
 模型配置默认会按这个顺序查找：
 
@@ -227,6 +228,7 @@ npx @turnkeyai/cli tui
 - 更长链、更真实任务的 soak / acceptance 覆盖
 - runtime/operator 在真实排障过程里的易用性继续打磨
 - real-world failure injection 下的长期稳态
+- 真实 release / public npm 发布闭环验证
 - GUI
 
 ## 开源阶段说明

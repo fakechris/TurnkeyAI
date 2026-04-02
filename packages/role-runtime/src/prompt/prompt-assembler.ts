@@ -5,10 +5,11 @@ import {
   hasContinuationBacklogSignal,
   hasMergeContinuationSignal,
 } from "@turnkeyai/core-types/continuation-semantics";
-import { getRelayBrief } from "@turnkeyai/core-types/team";
+import { getContinuationContext, getRelayBrief } from "@turnkeyai/core-types/team";
 import type {
   FlowLedger,
   HandoffEnvelope,
+  PromptAssemblyContextDiagnostics,
   RoleSlot,
   TeamMessageSummary,
   TeamThread,
@@ -64,6 +65,7 @@ export interface PromptAssemblyResult {
   compactedSegments: PromptSegmentName[];
   assemblyFingerprint: string;
   usedArtifacts: string[];
+  contextDiagnostics: PromptAssemblyContextDiagnostics;
   envelopeHint?: {
     toolResultCount?: number;
     toolResultBytes?: number;
@@ -95,6 +97,11 @@ interface BudgetedListSectionResult {
   text: string;
   keptCount: number;
   compacted: boolean;
+}
+
+interface RecentTurnSelectionResult {
+  turns: TeamMessageSummary[];
+  salientEarlierCount: number;
 }
 
 const MAX_WORKER_EVIDENCE_PROMPT_ARTIFACTS = 8;
@@ -130,6 +137,21 @@ export class DefaultPromptAssembler implements PromptAssembler {
       ["Task brief:", getRelayBrief(input.handoff.payload)].join("\n"),
       input.budget.taskLayerBudget
     );
+    const recentTurnSelection =
+      input.recentTurns.length > 0
+        ? selectRecentTurnsForPacking(input.recentTurns, this.maxRecentTurns)
+        : { turns: [], salientEarlierCount: 0 };
+    const compactRecentTurns = selectCompactRecentTurns(recentTurnSelection.turns);
+    const admittedWorkerEvidence = (input.workerEvidence ?? []).filter(
+      (digest) => digest.threadId === input.thread.threadId && digest.admissionMode !== "blocked"
+    );
+    const visibleWorkerEvidence = sortWorkerEvidence(admittedWorkerEvidence).slice(0, this.maxWorkerEvidence);
+    const compactWorkerEvidence = pickCompactWorkerEvidence(
+      visibleWorkerEvidence,
+      Math.max(1, Math.floor(this.maxWorkerEvidence / 2))
+    );
+    const visibleMemory = (input.retrievedMemory ?? []).slice(0, this.maxMemoryHits);
+    const compactMemory = pickCompactMemoryHits(visibleMemory, Math.max(1, Math.floor(this.maxMemoryHits / 2)));
     const optionalSections: Array<{
       segment: Exclude<PromptSegmentName, "task-brief">;
       text: string;
@@ -146,16 +168,24 @@ export class DefaultPromptAssembler implements PromptAssembler {
     if (input.recentTurns.length === 0) {
       omittedSegments.push({ segment: "recent-turns", reason: "empty" });
     } else {
-      const recentTurns = selectRecentTurnsForPacking(input.recentTurns, this.maxRecentTurns);
+      const recentTurnsText = trimSectionText(
+        buildRecentTurnsSection(recentTurnSelection.turns, input.recentTurns.length),
+        input.budget.recentTurnsBudget
+      );
+      const compactRecentTurnsText = trimSectionText(
+        buildRecentTurnsSection(compactRecentTurns, input.recentTurns.length, 120),
+        Math.max(Math.floor(input.budget.recentTurnsBudget * 0.55), 1)
+      );
       optionalSections.push({
         segment: "recent-turns",
         priority: 1,
         artifactIds: [],
-        text: trimSectionText(buildRecentTurnsSection(recentTurns, input.recentTurns.length), input.budget.recentTurnsBudget),
-        compactText: trimSectionText(
-          buildRecentTurnsSection(recentTurns.slice(-Math.min(2, recentTurns.length)), input.recentTurns.length, 120),
-          Math.max(Math.floor(input.budget.recentTurnsBudget * 0.55), 1)
-        ),
+        keptCount: recentTurnSelection.turns.length,
+        compactKeptCount: compactRecentTurns.length,
+        text: recentTurnsText,
+        compactText: compactRecentTurnsText,
+        compacted: recentTurnsText.includes("[compacted]"),
+        compactCompacted: compactRecentTurnsText.includes("[compacted]"),
       });
     }
 
@@ -220,12 +250,7 @@ export class DefaultPromptAssembler implements PromptAssembler {
     }
 
     if (input.workerEvidence && input.workerEvidence.length > 0) {
-      const threadWorkerEvidence = input.workerEvidence.filter(
-        (digest) => digest.threadId === input.thread.threadId && digest.admissionMode !== "blocked"
-      );
-      if (threadWorkerEvidence.length > 0) {
-        const visibleWorkerEvidence = sortWorkerEvidence(threadWorkerEvidence).slice(0, this.maxWorkerEvidence);
-        const compactWorkerEvidence = visibleWorkerEvidence.slice(0, Math.max(1, Math.floor(this.maxWorkerEvidence / 2)));
+      if (admittedWorkerEvidence.length > 0) {
         const workerSection = buildBudgetedListSection({
           title: "Worker evidence:",
           items: visibleWorkerEvidence.map((digest) => formatWorkerEvidenceLine(digest)),
@@ -261,8 +286,6 @@ export class DefaultPromptAssembler implements PromptAssembler {
     }
 
     if (input.retrievedMemory && input.retrievedMemory.length > 0) {
-      const visibleMemory = input.retrievedMemory.slice(0, this.maxMemoryHits);
-      const compactMemory = visibleMemory.slice(0, Math.max(1, Math.floor(this.maxMemoryHits / 2)));
       const memorySection = buildBudgetedListSection({
         title: "Retrieved memory:",
         items: visibleMemory.map((hit) => (hit.rationale ? `${hit.content} [${hit.rationale}]` : hit.content)),
@@ -277,6 +300,8 @@ export class DefaultPromptAssembler implements PromptAssembler {
         segment: "retrieved-memory",
         priority: 3,
         artifactIds: [],
+        keptCount: memorySection.keptCount,
+        compactKeptCount: compactMemorySection.keptCount,
         text: memorySection.text,
         compactText: compactMemorySection.text,
         compacted: memorySection.compacted,
@@ -364,6 +389,21 @@ export class DefaultPromptAssembler implements PromptAssembler {
       : undefined;
     const sectionOrder: PromptSegmentName[] = ["task-brief", ...keptSections.map((section) => section.segment)];
     const includedSegments = [...sectionOrder];
+    const contextDiagnostics = buildContextDiagnostics({
+      handoff: input.handoff,
+      threadSummary: input.threadSummary,
+      threadSessionMemory: input.threadSessionMemory,
+      roleScratchpad: input.roleScratchpad,
+      totalRecentTurnCount: input.recentTurns.length,
+      recentTurnSelection,
+      retrievedMemory: input.retrievedMemory ?? [],
+      totalWorkerEvidenceCount: (input.workerEvidence ?? []).filter((digest) => digest.threadId === input.thread.threadId).length,
+      visibleMemory,
+      admittedWorkerEvidence,
+      visibleWorkerEvidence,
+      keptSections,
+      compactedSegments,
+    });
     const assemblyFingerprint = buildAssemblyFingerprint({
       systemPrompt,
       userPrompt,
@@ -382,6 +422,7 @@ export class DefaultPromptAssembler implements PromptAssembler {
       compactedSegments: [...compactedSegments],
       assemblyFingerprint,
       usedArtifacts,
+      contextDiagnostics,
       ...(envelopeHint ? { envelopeHint } : {}),
     };
   }
@@ -405,12 +446,18 @@ function buildRecentTurnsSection(turns: TeamMessageSummary[], totalTurns: number
     .join("\n");
 }
 
-function selectRecentTurnsForPacking(turns: TeamMessageSummary[], limit: number): TeamMessageSummary[] {
+function selectRecentTurnsForPacking(turns: TeamMessageSummary[], limit: number): RecentTurnSelectionResult {
   if (limit <= 0) {
-    return [];
+    return {
+      turns: [],
+      salientEarlierCount: 0,
+    };
   }
   if (turns.length <= limit) {
-    return turns;
+    return {
+      turns,
+      salientEarlierCount: 0,
+    };
   }
 
   const tail = turns.slice(-Math.max(4, limit - 1));
@@ -430,15 +477,47 @@ function selectRecentTurnsForPacking(turns: TeamMessageSummary[], limit: number)
   );
 
   if (earlierSalient.length === 0) {
-    return turns.slice(-limit);
+    return {
+      turns: turns.slice(-limit),
+      salientEarlierCount: 0,
+    };
   }
 
   const tailBudget = Math.max(0, limit - earlierSalient.length);
   const boundedTail = tail.slice(-tailBudget);
 
-  return [...boundedTail, ...earlierSalient]
+  return {
+    turns: [...boundedTail, ...earlierSalient]
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .slice(0, limit),
+    salientEarlierCount: earlierSalient.length,
+  };
+}
+
+function selectCompactRecentTurns(turns: TeamMessageSummary[]): TeamMessageSummary[] {
+  if (turns.length <= 2) {
+    return turns;
+  }
+
+  const tail = turns.slice(-2);
+  const earlierCandidates = turns
+    .slice(0, -2)
+    .map((message) => ({ message, score: recentTurnSalienceScore(message) }))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => {
+      if (left.score !== right.score) {
+        return right.score - left.score;
+      }
+      return left.message.createdAt - right.message.createdAt;
+    });
+  const salientEarlier = earlierCandidates[0]?.message;
+  if (!salientEarlier) {
+    return tail;
+  }
+
+  return [salientEarlier, ...tail]
     .sort((left, right) => left.createdAt - right.createdAt)
-    .slice(0, limit);
+    .slice(-3);
 }
 
 function pickSalientEarlierTurns(
@@ -576,6 +655,16 @@ function collectWorkerEvidenceArtifactIds(values: WorkerEvidenceDigest[], limit:
   return [...new Set(values.flatMap((digest) => digest.artifactIds))].slice(0, limit);
 }
 
+function pickCompactWorkerEvidence(values: WorkerEvidenceDigest[], limit: number): WorkerEvidenceDigest[] {
+  if (limit <= 0 || values.length === 0) {
+    return [];
+  }
+  return [...values]
+    .sort((left, right) => workerEvidenceCompactionScore(right) - workerEvidenceCompactionScore(left))
+    .slice(0, limit)
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
 function sortWorkerEvidence(values: WorkerEvidenceDigest[]): WorkerEvidenceDigest[] {
   return [...values].sort((left, right) => {
     const leftScore = workerEvidenceScore(left);
@@ -602,7 +691,138 @@ function workerEvidenceScore(value: WorkerEvidenceDigest): number {
   } else if (value.sourceType === "tool") {
     score += 2;
   }
+  if (isContinuationRelevantWorkerEvidence(value)) {
+    score += 6;
+  }
+  if (/\b(blocker|blocked|waiting on|pending|follow-?up|approval|resume|retry)\b/i.test(workerEvidenceText(value))) {
+    score += 4;
+  }
+  if (value.referenceOnly) {
+    score -= 1.5;
+  }
   return score;
+}
+
+function workerEvidenceCompactionScore(value: WorkerEvidenceDigest): number {
+  let score = workerEvidenceScore(value);
+  if (isContinuationRelevantWorkerEvidence(value)) {
+    score += 8;
+  }
+  if (value.admissionMode === "full") {
+    score += 3;
+  }
+  return score;
+}
+
+function pickCompactMemoryHits(values: MemoryHit[], limit: number): MemoryHit[] {
+  if (limit <= 0 || values.length === 0) {
+    return [];
+  }
+
+  return [...values]
+    .sort((left, right) => memoryCompactionScore(right) - memoryCompactionScore(left))
+    .slice(0, limit)
+    .sort((left, right) => right.score - left.score);
+}
+
+function memoryCompactionScore(value: MemoryHit): number {
+  let score = value.score;
+  if (value.source === "session-memory") {
+    score += 1.1;
+  } else if (value.source === "thread-memory") {
+    score += 0.45;
+  } else if (value.source === "user-preference") {
+    score += 0.25;
+  }
+  if (/\b(pending|waiting on|open question|question|constraint|budget|decision|decided|approved|approval|blocker|resume|continue)\b/i.test(value.content)) {
+    score += 0.9;
+  }
+  if (/\b(journal)\b/i.test(value.content)) {
+    score -= 0.25;
+  }
+  return score;
+}
+
+function isContinuationRelevantWorkerEvidence(value: WorkerEvidenceDigest): boolean {
+  return hasContinuationBacklogSignal(workerEvidenceText(value));
+}
+
+function workerEvidenceText(value: WorkerEvidenceDigest): string {
+  return [value.microcompactSummary ?? "", ...value.findings].join(" ");
+}
+
+function buildContextDiagnostics(input: {
+  handoff: HandoffEnvelope;
+  threadSummary?: ThreadSummaryRecord | null | undefined;
+  threadSessionMemory?: ThreadSessionMemoryRecord | null | undefined;
+  roleScratchpad?: PromptAssemblyInput["roleScratchpad"] | undefined;
+  totalRecentTurnCount: number;
+  recentTurnSelection: RecentTurnSelectionResult;
+  retrievedMemory: MemoryHit[];
+  totalWorkerEvidenceCount: number;
+  visibleMemory: MemoryHit[];
+  admittedWorkerEvidence: WorkerEvidenceDigest[];
+  visibleWorkerEvidence: WorkerEvidenceDigest[];
+  keptSections: Array<{ segment: Exclude<PromptSegmentName, "task-brief">; keptCount?: number }>;
+  compactedSegments: Set<PromptSegmentName>;
+}): PromptAssemblyContextDiagnostics {
+  const keptBySegment = new Map(input.keptSections.map((section) => [section.segment, section]));
+  const recentTurnsSection = keptBySegment.get("recent-turns");
+  const retrievedMemorySection = keptBySegment.get("retrieved-memory");
+  const workerEvidenceSection = keptBySegment.get("worker-evidence");
+
+  return {
+    continuity: {
+      hasThreadSummary: Boolean(input.threadSummary),
+      hasSessionMemory: Boolean(input.threadSessionMemory),
+      hasRoleScratchpad: Boolean(input.roleScratchpad),
+      hasContinuationContext: Boolean(getContinuationContext(input.handoff.payload)),
+      carriesPendingWork: Boolean(
+        (input.roleScratchpad?.pendingWork.length ?? 0) > 0 || (input.threadSessionMemory?.activeTasks.length ?? 0) > 0
+      ),
+      carriesWaitingOn: Boolean(
+        input.roleScratchpad?.waitingOn || (input.threadSessionMemory?.continuityNotes.length ?? 0) > 0
+      ),
+      carriesOpenQuestions: Boolean(
+        (input.threadSummary?.openQuestions.length ?? 0) > 0 || (input.threadSessionMemory?.openQuestions.length ?? 0) > 0
+      ),
+      carriesDecisionOrConstraint: Boolean(
+        (input.threadSummary?.decisions.length ?? 0) > 0 ||
+          (input.threadSessionMemory?.recentDecisions.length ?? 0) > 0 ||
+          (input.threadSessionMemory?.constraints.length ?? 0) > 0
+      ),
+    },
+    recentTurns: {
+      availableCount: input.totalRecentTurnCount,
+      selectedCount: input.recentTurnSelection.turns.length,
+      packedCount: Number(recentTurnsSection?.keptCount ?? 0),
+      salientEarlierCount: input.recentTurnSelection.salientEarlierCount,
+      compacted: input.compactedSegments.has("recent-turns"),
+    },
+    retrievedMemory: {
+      availableCount: input.retrievedMemory.length,
+      selectedCount: input.visibleMemory.length,
+      packedCount: Number(retrievedMemorySection?.keptCount ?? 0),
+      compacted: input.compactedSegments.has("retrieved-memory"),
+      userPreferenceCount: input.retrievedMemory.filter((hit) => hit.source === "user-preference").length,
+      threadMemoryCount: input.retrievedMemory.filter((hit) => hit.source === "thread-memory").length,
+      sessionMemoryCount: input.retrievedMemory.filter((hit) => hit.source === "session-memory").length,
+      knowledgeNoteCount: input.retrievedMemory.filter((hit) => hit.source === "knowledge-note").length,
+      journalNoteCount: input.retrievedMemory.filter((hit) => hit.source === "journal-note").length,
+    },
+    workerEvidence: {
+      totalCount: input.totalWorkerEvidenceCount,
+      admittedCount: input.admittedWorkerEvidence.length,
+      selectedCount: input.visibleWorkerEvidence.length,
+      packedCount: Number(workerEvidenceSection?.keptCount ?? 0),
+      compacted: input.compactedSegments.has("worker-evidence"),
+      promotableCount: input.admittedWorkerEvidence.filter((digest) => digest.trustLevel === "promotable").length,
+      observationalCount: input.admittedWorkerEvidence.filter((digest) => digest.trustLevel === "observational").length,
+      fullCount: input.admittedWorkerEvidence.filter((digest) => digest.admissionMode === "full").length,
+      summaryOnlyCount: input.admittedWorkerEvidence.filter((digest) => digest.admissionMode === "summary_only").length,
+      continuationRelevantCount: input.admittedWorkerEvidence.filter(isContinuationRelevantWorkerEvidence).length,
+    },
+  };
 }
 
 function trimSectionText(text: string, maxTokens: number): string {
@@ -622,6 +842,24 @@ function trimSectionText(text: string, maxTokens: number): string {
 
   if (kept.length === lines.length) {
     return text;
+  }
+
+  if (
+    ((kept.length <= 1) ||
+      (kept.length === 2 && isCompactionNoticeLine(kept[1] ?? ""))) &&
+    lines.length > kept.length
+  ) {
+    const replaceCompactionNotice = kept.length === 2 && isCompactionNoticeLine(kept[1] ?? "");
+    const prefix = replaceCompactionNotice ? kept.slice(0, 1) : kept;
+    const preferredLineIndex = findPreferredCompactedLineIndex(lines, prefix.length);
+    const forcedLine = forceCompactLineIntoBudget({
+      prefix,
+      line: lines[preferredLineIndex] ?? "",
+      maxTokens,
+    });
+    if (forcedLine) {
+      kept.splice(prefix.length, kept.length - prefix.length, forcedLine);
+    }
   }
 
   return [...kept, `[compacted] ${lines.length - kept.length} line(s) omitted for budget.`].join("\n");
@@ -665,6 +903,25 @@ function buildBudgetedListSection(input: {
     };
   }
 
+  if (kept.length === 0 && input.items.length > 0) {
+    const forcedItem = forceCompactLineIntoBudget({
+      prefix: [input.title],
+      line: input.items[0] ?? "",
+      maxTokens: input.maxTokens,
+    });
+    if (forcedItem) {
+      return {
+        text: [
+          input.title,
+          forcedItem,
+          `[compacted] ${Math.max(input.items.length - 1, 0)} item(s) omitted for budget.`,
+        ].join("\n"),
+        keptCount: 1,
+        compacted: true,
+      };
+    }
+  }
+
   const omittedCount = input.items.length - kept.length;
   return {
     text: [input.title, ...kept, `[compacted] ${omittedCount} item(s) omitted for budget.`].join("\n"),
@@ -682,6 +939,38 @@ function compactListItem(item: string): string {
     return `${truncate(item.slice(0, bracketIndex), 120)}${item.slice(bracketIndex)}`;
   }
   return truncate(item, 140);
+}
+
+function forceCompactLineIntoBudget(input: {
+  prefix: string[];
+  line: string;
+  maxTokens: number;
+}): string | null {
+  const base = input.prefix.join("\n");
+  const remainingTokens = input.maxTokens - roughTokenEstimate(base);
+  if (remainingTokens <= 1) {
+    return null;
+  }
+
+  const maxChars = Math.max(24, remainingTokens * 4 - 4);
+  const compacted = compactListItem(input.line);
+  const forcedLine = truncate(compacted, maxChars);
+  const candidate = [base, forcedLine].filter(Boolean).join("\n");
+  return roughTokenEstimate(candidate) <= input.maxTokens ? forcedLine : null;
+}
+
+function findPreferredCompactedLineIndex(lines: string[], startIndex: number): number {
+  for (let index = startIndex; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line && !isCompactionNoticeLine(line)) {
+      return index;
+    }
+  }
+  return startIndex;
+}
+
+function isCompactionNoticeLine(line: string): boolean {
+  return /^\[compacted\]\s+\d+\s+(earlier turn\(s\)|line\(s\)|item\(s\)) omitted/i.test(line);
 }
 
 function findCompactableSectionIndex(

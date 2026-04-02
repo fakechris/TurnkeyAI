@@ -142,6 +142,11 @@ test("default role prompt policy assembles context from thread and worker stores
       "worker-evidence",
       "recent-turns",
     ]);
+    assert.equal(packet.promptAssembly?.contextDiagnostics.continuity.hasThreadSummary, true);
+    assert.equal(packet.promptAssembly?.contextDiagnostics.continuity.hasRoleScratchpad, true);
+    assert.equal(packet.promptAssembly?.contextDiagnostics.retrievedMemory.selectedCount, 2);
+    assert.equal(packet.promptAssembly?.contextDiagnostics.workerEvidence.selectedCount, 1);
+    assert.equal(packet.promptAssembly?.contextDiagnostics.workerEvidence.packedCount, 1);
     assert.equal(typeof packet.promptAssembly?.assemblyFingerprint, "string");
     assert.equal(packet.promptAssembly?.assemblyFingerprint.length, 40);
     assert.equal(packet.continuityMode, "fresh");
@@ -695,6 +700,97 @@ test("default role prompt policy keeps widened explicit recall memory hits with 
 
     assert.match(packet.taskPrompt, /Preference pricing-1 should stay visible/);
     assert.match(packet.taskPrompt, /Preference pricing-6 should stay visible/);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("default role prompt policy keeps constraint memory ahead of journal recap under retrieved-memory compaction", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "prompt-policy-retrieved-memory-compaction-"));
+
+  try {
+    const threadSummaryStore = new FileThreadSummaryStore({
+      rootDir: path.join(tempDir, "thread-summaries"),
+    });
+    const threadMemoryStore = new FileThreadMemoryStore({
+      rootDir: path.join(tempDir, "thread-memory"),
+    });
+    const threadJournalStore = new FileThreadJournalStore({
+      rootDir: path.join(tempDir, "thread-journal"),
+    });
+    const roleScratchpadStore = new FileRoleScratchpadStore({
+      rootDir: path.join(tempDir, "role-scratchpads"),
+    });
+    const workerEvidenceDigestStore = new FileWorkerEvidenceDigestStore({
+      rootDir: path.join(tempDir, "worker-evidence"),
+    });
+
+    await threadMemoryStore.put({
+      threadId: "thread-1",
+      updatedAt: 10,
+      preferences: ["Prefer concise recommendations."],
+      constraints: ["Budget must stay under $500."],
+      longTermNotes: ["Keep the supplier shortlist aligned with the browser review."],
+    });
+    await threadJournalStore.put({
+      threadId: "thread-1",
+      dateKey: "2026-03-30",
+      updatedAt: 12,
+      entries: [
+        "[Lead] Today budget notes were noisy and should not crowd out the real constraint.",
+        "[Lead] Recent journal recap mentioned a follow-up but not the binding limit.",
+      ],
+    });
+
+    const contextBudgeter = new DefaultContextBudgeter();
+    const promptAssembler = new DefaultPromptAssembler({
+      estimateTokens: (input, reservedOutputTokens, maxInputTokens) =>
+        contextBudgeter.estimate(input, reservedOutputTokens, maxInputTokens),
+      maxMemoryHits: 4,
+    });
+    const policy = new DefaultRolePromptPolicy({
+      roleProfileRegistry: new DefaultRoleProfileRegistry(),
+      contextBudgeter: {
+        async allocate(input) {
+          const budget = await contextBudgeter.allocate(input);
+          return {
+            ...budget,
+            totalBudget: 180,
+            reservedOutputTokens: 20,
+            compressedMemoryBudget: 56,
+          };
+        },
+        async estimate(input, reservedOutputTokens, maxInputTokens) {
+          return contextBudgeter.estimate(input, reservedOutputTokens, maxInputTokens);
+        },
+      },
+      roleMemoryResolver: new DefaultRoleMemoryResolver({
+        threadSummaryStore,
+        threadMemoryStore,
+        threadJournalStore,
+        roleScratchpadStore,
+        workerEvidenceDigestStore,
+      }),
+      promptAssembler,
+      reservedOutputTokens: 20,
+    });
+
+    const packet = await policy.buildPacket({
+      ...buildFinanceActivationInput(),
+      handoff: {
+        ...buildFinanceActivationInput().handoff,
+        payload: {
+          ...buildFinanceActivationInput().handoff.payload,
+          relayBrief:
+            "Continue the task, keep the budget constraint visible, and recall what limit still matters before the next step.",
+        },
+      },
+    });
+
+    assert.match(packet.taskPrompt, /Retrieved memory:[\s\S]*Constraint: Budget must stay un/);
+    assert.doesNotMatch(packet.taskPrompt, /Retrieved memory:[\s\S]*Journal 2026-03-30/);
+    assert.equal(packet.promptAssembly?.contextDiagnostics.retrievedMemory.compacted, true);
+    assert.equal(packet.promptAssembly?.contextDiagnostics.retrievedMemory.packedCount <= 2, true);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
@@ -1272,8 +1368,68 @@ test("default role prompt policy keeps an older blocker turn when recent turns a
     },
   });
 
-  assert.match(packet.taskPrompt, /Browser blocker: login expired before the pricing review could proceed/);
+  assert.match(packet.taskPrompt, /Browser blocker: login expir/);
   assert.match(packet.taskPrompt, /Routine note 7/);
+});
+
+test("default role prompt policy keeps salient blocker turns when recent-turn section itself is compacted", async () => {
+  const contextBudgeter = new DefaultContextBudgeter();
+  const promptAssembler = new DefaultPromptAssembler({
+    estimateTokens: (input, reservedOutputTokens, maxInputTokens) =>
+      contextBudgeter.estimate(input, reservedOutputTokens, maxInputTokens),
+    maxRecentTurns: 5,
+  });
+  const policy = new DefaultRolePromptPolicy({
+    roleProfileRegistry: new DefaultRoleProfileRegistry(),
+    contextBudgeter: {
+      async allocate(input) {
+        const budget = await contextBudgeter.allocate(input);
+        return {
+          ...budget,
+          totalBudget: 150,
+          reservedOutputTokens: 20,
+          recentTurnsBudget: 14,
+        };
+      },
+      async estimate(input, reservedOutputTokens, maxInputTokens) {
+        return contextBudgeter.estimate(input, reservedOutputTokens, maxInputTokens);
+      },
+    },
+    promptAssembler,
+    reservedOutputTokens: 20,
+  });
+
+  const packet = await policy.buildPacket({
+    ...buildFinanceActivationInput(),
+    handoff: {
+      ...buildFinanceActivationInput().handoff,
+      payload: {
+        ...buildFinanceActivationInput().handoff.payload,
+        recentMessages: [
+          {
+            messageId: "msg-user-blocker-0",
+            role: "assistant" as const,
+            roleId: "role-lead",
+            name: "Lead",
+            content: "Browser blocker: login expired before the pricing review could proceed.",
+            createdAt: 0,
+          },
+          ...Array.from({ length: 7 }, (_, index) => ({
+            messageId: `msg-tight-${index + 1}`,
+            role: index % 2 === 0 ? ("assistant" as const) : ("user" as const),
+            name: index % 2 === 0 ? "Lead" : "Chris",
+            content: `Routine continuation turn ${index + 1}`,
+            createdAt: index + 1,
+            ...(index % 2 === 0 ? { roleId: "role-lead" } : {}),
+          })),
+        ],
+      },
+    },
+  });
+
+  assert.match(packet.taskPrompt, /Browser blocker: login expir/);
+  assert.equal(packet.promptAssembly?.contextDiagnostics.recentTurns.compacted, true);
+  assert.equal(packet.promptAssembly?.contextDiagnostics.recentTurns.salientEarlierCount >= 1, true);
 });
 
 test("default role prompt policy keeps both older user approval ask and assistant merge blocker under recent-turn compaction", async () => {

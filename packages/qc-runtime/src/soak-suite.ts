@@ -90,6 +90,7 @@ const SCENARIOS: SoakScenarioDescriptor[] = [
       "context-evidence-heavy-keeps-pending-work",
       "context-reentry-preserves-active-tasks-and-open-questions",
       "context-continuity-keeps-decisions-and-constraints-under-budget",
+      "runtime-prompt-console-summarizes-boundaries",
       "runtime-summary-surfaces-stale-waiting-point-and-child-span",
       "runtime-chain-query-answers-root-active-and-waiting-point",
     ],

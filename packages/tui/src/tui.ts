@@ -1040,6 +1040,20 @@ function printPromptConsole(report: PromptConsoleReport): void {
         .join(", ")}`
     );
   }
+  console.log(
+    `  recent turns packed: ${report.totalRecentTurnsPacked}/${report.totalRecentTurnsSelected}`
+  );
+  console.log(
+    `  retrieved memory packed: ${report.totalRetrievedMemoryPacked}/${report.totalRetrievedMemoryCandidates}`
+  );
+  console.log(
+    `  worker evidence packed: ${report.totalWorkerEvidencePacked}/${report.totalWorkerEvidenceCandidates}`
+  );
+  if (Object.values(report.continuityCarryForwardCounts).some((count) => count > 0)) {
+    console.log(
+      `  carry-forward: continuation=${report.continuityCarryForwardCounts.continuationContext}, pending=${report.continuityCarryForwardCounts.pendingWork}, waiting=${report.continuityCarryForwardCounts.waitingOn}, open-questions=${report.continuityCarryForwardCounts.openQuestions}, decisions-or-constraints=${report.continuityCarryForwardCounts.decisionsOrConstraints}`
+    );
+  }
   console.log(`  unique fingerprints: ${report.uniqueAssemblyFingerprintCount}`);
   if (report.latestBoundaries.length > 0) {
     console.log("  latest boundaries:");
@@ -1078,6 +1092,30 @@ function printPromptConsole(report: PromptConsoleReport): void {
         console.log(
           `      tokens: input=${entry.tokenEstimate.inputTokens} projected=${entry.tokenEstimate.totalProjectedTokens} reserved=${entry.tokenEstimate.outputTokensReserved}`
         );
+      }
+      if (entry.contextDiagnostics) {
+        console.log(
+          `      packed: turns=${entry.contextDiagnostics.recentTurns.packedCount}/${entry.contextDiagnostics.recentTurns.selectedCount}, memory=${entry.contextDiagnostics.retrievedMemory.packedCount}/${entry.contextDiagnostics.retrievedMemory.selectedCount}, evidence=${entry.contextDiagnostics.workerEvidence.packedCount}/${entry.contextDiagnostics.workerEvidence.selectedCount}`
+        );
+        const carryForward: string[] = [];
+        if (entry.contextDiagnostics.continuity.hasContinuationContext) {
+          carryForward.push("continuation");
+        }
+        if (entry.contextDiagnostics.continuity.carriesPendingWork) {
+          carryForward.push("pending");
+        }
+        if (entry.contextDiagnostics.continuity.carriesWaitingOn) {
+          carryForward.push("waiting");
+        }
+        if (entry.contextDiagnostics.continuity.carriesOpenQuestions) {
+          carryForward.push("open-questions");
+        }
+        if (entry.contextDiagnostics.continuity.carriesDecisionOrConstraint) {
+          carryForward.push("decisions-or-constraints");
+        }
+        if (carryForward.length > 0) {
+          console.log(`      carry-forward: ${carryForward.join(", ")}`);
+        }
       }
     }
   }
