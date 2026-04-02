@@ -87,12 +87,14 @@ const SCENARIOS: SoakScenarioDescriptor[] = [
     area: "context",
     title: "Context pressure / re-entry / runtime visibility",
     summary:
-      "验证高压上下文、re-entry continuity 与 runtime waiting-point 可见性在长任务里同时成立。",
+      "验证高压上下文、re-entry continuity、prompt compaction 诊断与 runtime waiting-point 可见性在长任务里同时成立。",
     caseIds: [
       "context-evidence-heavy-keeps-pending-work",
       "context-reentry-preserves-active-tasks-and-open-questions",
       "context-continuity-keeps-decisions-and-constraints-under-budget",
+      "context-continuity-keeps-journal-notes-under-budget",
       "runtime-prompt-console-summarizes-boundaries",
+      "context-runtime-pressure-keeps-carry-forward-and-waiting-visible",
       "runtime-summary-surfaces-stale-waiting-point-and-child-span",
       "runtime-chain-query-answers-root-active-and-waiting-point",
     ],

@@ -20,6 +20,11 @@ test("scenario parity acceptance suite lists scenario families", () => {
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "observability-live-chain-visibility"));
   assert.ok(
     scenarios
+      .find((scenario) => scenario.scenarioId === "context-evidence-heavy-and-reentry")
+      ?.caseIds.includes("context-runtime-pressure-keeps-carry-forward-and-waiting-visible")
+  );
+  assert.ok(
+    scenarios
       .find((scenario) => scenario.scenarioId === "browser-spawn-send-resume")
       ?.caseIds.includes("browser-recovery-multi-attempt-chain-stays-aligned")
   );

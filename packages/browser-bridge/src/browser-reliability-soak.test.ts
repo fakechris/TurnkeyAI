@@ -1610,3 +1610,317 @@ test("browser reliability soak keeps target-local ref history isolated across sa
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("browser reliability soak keeps evicted-session history and refs isolated from a fresh replacement session", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "browser-reliability-eviction-ref-isolation-soak-"));
+
+  try {
+    let nowTick = 30_000;
+    let idTick = 0;
+    let pageSeed = 0;
+    type FakePage = Page & {
+      __url: string;
+      __title: string;
+      __closed: boolean;
+      __selectors: string[];
+      __clickedSelectors: string[];
+    };
+    const livePages: FakePage[] = [];
+
+    const buildLocator = (page: FakePage, selector: string) => ({
+      first() {
+        return {
+          async count() {
+            return page.__selectors.includes(selector) ? 1 : 0;
+          },
+          async click() {
+            if (!page.__selectors.includes(selector)) {
+              throw new Error(`missing selector: ${selector}`);
+            }
+            page.__clickedSelectors.push(selector);
+          },
+          async fill(_value: string) {
+            if (!page.__selectors.includes(selector)) {
+              throw new Error(`missing selector: ${selector}`);
+            }
+          },
+          async press(_key: string) {
+            return undefined;
+          },
+        };
+      },
+    });
+
+    const createPage = () => {
+      pageSeed += 1;
+      const selectors =
+        pageSeed === 1
+          ? ['button[data-plan="a"]']
+          : ['button[data-plan="c"]'];
+      const page = {
+        __url: "about:blank",
+        __title: "Blank",
+        __closed: false,
+        __selectors: selectors,
+        __clickedSelectors: [] as string[],
+        url() {
+          return page.__url;
+        },
+        async title() {
+          return page.__title;
+        },
+        async goto(url: string) {
+          page.__url = url;
+          page.__title = url.includes("pricing") ? "Pricing" : "Example";
+          return { status: () => 200 };
+        },
+        async waitForLoadState() {
+          return undefined;
+        },
+        async waitForTimeout() {
+          return undefined;
+        },
+        async screenshot() {
+          return undefined;
+        },
+        async close() {
+          page.__closed = true;
+        },
+        locator(selector: string) {
+          return buildLocator(page, selector);
+        },
+        getByRole(..._args: unknown[]) {
+          return buildLocator(page, "__missing__");
+        },
+        getByText(..._args: unknown[]) {
+          return buildLocator(page, "__missing__");
+        },
+      } as unknown as FakePage;
+      livePages.push(page);
+      return page;
+    };
+
+    const fakeContext = {
+      on() {
+        return this;
+      },
+      pages() {
+        return livePages.filter((item) => !item.__closed);
+      },
+      async newPage() {
+        return createPage();
+      },
+      async close() {
+        for (const page of livePages) {
+          page.__closed = true;
+        }
+      },
+    } as unknown as BrowserContext;
+
+    const browserSessionManager = new BrowserSessionManager({
+      browserProfileStore: new FileBrowserProfileStore({
+        rootDir: path.join(tempDir, "profiles"),
+      }),
+      browserSessionStore: new FileBrowserSessionStore({
+        rootDir: path.join(tempDir, "sessions"),
+      }),
+      browserTargetStore: new FileBrowserTargetStore({
+        rootDir: path.join(tempDir, "targets"),
+      }),
+      profileRootDir: path.join(tempDir, "profiles"),
+      now: () => ++nowTick,
+      createId: (prefix) => `${prefix}-${++idTick}`,
+    });
+    const historyStore = new FileBrowserSessionHistoryStore({
+      rootDir: path.join(tempDir, "history"),
+    });
+    const snapshotRefStore = new FileSnapshotRefStore({
+      rootDir: path.join(tempDir, "refs"),
+    });
+    const manager = new ChromeSessionManager({
+      artifactRootDir: path.join(tempDir, "artifacts"),
+      browserSessionManager,
+      browserSessionHistoryStore: historyStore,
+      snapshotRefStore,
+      browserArtifactStore: new FileBrowserArtifactStore({
+        rootDir: path.join(tempDir, "artifact-records"),
+      }),
+      createId: (prefix) => `${prefix}-${++idTick}`,
+      launchPersistentContext: async () => fakeContext,
+      createEphemeralContext: async () => fakeContext,
+      captureSnapshot: async ({ page, requestedUrl }) => {
+        const selector = (page as Page & { __selectors: string[] }).__selectors[0];
+        const interactiveEntries =
+          selector === 'button[data-plan="a"]'
+            ? [
+                {
+                  refId: "plan-a",
+                  role: "button" as const,
+                  label: "Select Plan A",
+                  tagName: "button",
+                  selectors: ['button[data-plan="a"]'],
+                },
+              ]
+            : [
+                {
+                  refId: "plan-c",
+                  role: "button" as const,
+                  label: "Select Plan C",
+                  tagName: "button",
+                  selectors: ['button[data-plan="c"]'],
+                },
+              ];
+        return {
+          requestedUrl,
+          finalUrl: page.url() || requestedUrl,
+          title: (await page.title()) || "",
+          textExcerpt: (await page.title()) || "",
+          statusCode: 200,
+          interactives: interactiveEntries,
+        };
+      },
+    });
+
+    const original = await manager.spawnSession({
+      taskId: "task-evict-ref-1",
+      threadId: "thread-evict-ref",
+      instructions: "Open pricing and capture original ref set",
+      actions: [
+        { kind: "open", url: "https://example.com/pricing" },
+        { kind: "snapshot", note: "original-session" },
+      ],
+      ownerType: "thread",
+      ownerId: "thread-evict-ref",
+      profileOwnerType: "thread",
+      profileOwnerId: "thread-evict-ref",
+      leaseHolderRunKey: "worker:browser:evict-ref-a",
+      leaseTtlMs: 5,
+    });
+    assert.ok(original.targetId);
+    assert.equal((await snapshotRefStore.resolve({
+      browserSessionId: original.sessionId,
+      targetId: original.targetId!,
+      refId: "plan-a",
+    }))?.label, "Select Plan A");
+
+    const originalHistory = await manager.getSessionHistory({ browserSessionId: original.sessionId });
+    assert.deepEqual(
+      originalHistory.map((entry) => `${entry.dispatchMode}:${entry.targetId}:${entry.targetResolution ?? "none"}`),
+      [`spawn:${original.targetId}:new_target`]
+    );
+
+    const evicted = await manager.evictIdleSessions({
+      idleBefore: nowTick + 100,
+      reason: "rotate browser session after soak",
+    });
+    assert.equal(evicted.length, 1);
+    assert.equal(evicted[0]?.browserSessionId, original.sessionId);
+
+    const originalHistoryAfterEviction = await manager.getSessionHistory({
+      browserSessionId: original.sessionId,
+    });
+    assert.deepEqual(
+      originalHistoryAfterEviction.map((entry) => `${entry.dispatchMode}:${entry.targetId}:${entry.targetResolution ?? "none"}`),
+      [`spawn:${original.targetId}:new_target`]
+    );
+    assert.equal((await snapshotRefStore.resolve({
+      browserSessionId: original.sessionId,
+      targetId: original.targetId!,
+      refId: "plan-a",
+    }))?.label, "Select Plan A");
+
+    await assert.rejects(
+      () =>
+        manager.resumeSession({
+          taskId: "task-evict-ref-resume",
+          threadId: "thread-evict-ref",
+          instructions: "Resume the evicted session",
+          actions: [{ kind: "snapshot", note: "resume-evicted" }],
+          browserSessionId: original.sessionId,
+          targetId: original.targetId!,
+          ownerType: "thread",
+          ownerId: "thread-evict-ref",
+          leaseHolderRunKey: "worker:browser:evict-ref-b",
+        }),
+      /browser session not found/
+    );
+
+    const replacement = await manager.spawnSession({
+      taskId: "task-evict-ref-2",
+      threadId: "thread-evict-ref",
+      instructions: "Open pricing in a fresh replacement session",
+      actions: [
+        { kind: "open", url: "https://example.com/pricing" },
+        { kind: "snapshot", note: "replacement-session" },
+      ],
+      ownerType: "thread",
+      ownerId: "thread-evict-ref",
+      profileOwnerType: "thread",
+      profileOwnerId: "thread-evict-ref",
+      leaseHolderRunKey: "worker:browser:evict-ref-c",
+      leaseTtlMs: 5,
+    });
+    assert.ok(replacement.targetId);
+    assert.notEqual(replacement.sessionId, original.sessionId);
+    assert.notEqual(replacement.targetId, original.targetId);
+    assert.equal(
+      await snapshotRefStore.resolve({
+        browserSessionId: replacement.sessionId,
+        targetId: replacement.targetId!,
+        refId: "plan-a",
+      }),
+      null
+    );
+    assert.equal((await snapshotRefStore.resolve({
+      browserSessionId: replacement.sessionId,
+      targetId: replacement.targetId!,
+      refId: "plan-c",
+    }))?.label, "Select Plan C");
+
+    await assert.rejects(
+      () =>
+        manager.sendSession({
+          taskId: "task-evict-ref-3",
+          threadId: "thread-evict-ref",
+          instructions: "Old ref must not resolve in the replacement session",
+          actions: [{ kind: "click", refId: "plan-a" }],
+          browserSessionId: replacement.sessionId,
+          targetId: replacement.targetId!,
+          ownerType: "thread",
+          ownerId: "thread-evict-ref",
+          leaseHolderRunKey: "worker:browser:evict-ref-c",
+          leaseTtlMs: 5,
+        }),
+      /unknown snapshot ref requested: plan-a/
+    );
+
+    const replacementClick = await manager.sendSession({
+      taskId: "task-evict-ref-4",
+      threadId: "thread-evict-ref",
+      instructions: "Replacement session should still resolve its own ref set",
+      actions: [{ kind: "click", refId: "plan-c" }],
+      browserSessionId: replacement.sessionId,
+      targetId: replacement.targetId,
+      ownerType: "thread",
+      ownerId: "thread-evict-ref",
+      leaseHolderRunKey: "worker:browser:evict-ref-c",
+      leaseTtlMs: 5,
+    });
+    assert.equal(replacementClick.dispatchMode, "send");
+    assert.equal(replacementClick.resumeMode, "hot");
+    assert.equal(replacementClick.targetResolution, "attach");
+    assert.deepEqual(livePages.at(-1)?.__clickedSelectors, ['button[data-plan="c"]']);
+
+    const replacementHistory = await manager.getSessionHistory({ browserSessionId: replacement.sessionId });
+    assert.deepEqual(
+      replacementHistory.map((entry) => `${entry.dispatchMode}:${entry.targetId}:${entry.targetResolution ?? "none"}`),
+      [
+        `spawn:${replacement.targetId}:new_target`,
+        "send:undefined:none",
+        `send:${replacement.targetId}:attach`,
+      ]
+    );
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});

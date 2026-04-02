@@ -43,6 +43,7 @@
 - prompt assembly compact-before-drop 与 `compactedSegments` 元数据
 - browser continuity matrix：lease reclaim / wrong-owner denial / reopen/new-target 长链验证
 - target-local snapshot/ref history 已覆盖同 URL 多 target 下的隔离与 reopen 后连续性验证
+- browser eviction 边界已覆盖旧 session history/ref 保留与新 replacement session ref 隔离
 - recovery timeline / bundle / TUI 工单视图与 phase/gate 对齐
 - context carry-forward：pending/waiting recall 优先级与 unresolved question memory carry-forward
 - browser continuity 已进入 replay bundle / console / TUI 视图
@@ -51,6 +52,7 @@
 - operator-facing case cards：`active / resolved recent`、`headline / latestUpdate / nextStep`
 - cross-surface operator attention：`caseState / severity / lifecycle / caseKey / browser continuity`
 - context runtime tuning：approval / merge / continuation 的语义 recall 与 salience compaction
+- context/runtime acceptance 已覆盖高压 compaction 下的 carry-forward、waiting-point 与 prompt-console 对齐
 
 还没有具备：
 
@@ -168,7 +170,7 @@ npx @turnkeyai/cli tui
 `replay-console` 会同时显示仍需处理的 `latest bundles`，以及最近已收敛的 `latest resolved bundles`，便于把当前告警和刚恢复的 case 分开看；同时也会把 recovery operator 的 `case state`、`gate` 和 `allowed actions` 一起带出来，避免 workflow 已 recovered 但 operator 仍在 `waiting_manual` 时被首页级视图误判为彻底收口。
 `replay-bundle` 现在会直接带出 recovery operator 语义，包括当前 `gate`、允许动作、phase summary 和最近一次 browser outcome，便于不翻源码直接判断这个 case 还卡在哪一步。
 `operator-summary` / `operator-attention` 现在会把 recovery case 的 `allowed actions` 一起打出来，避免只看到 `next action` 却不知道当前 run 还允许哪些手动操作。
-`prompt-console` 现在会额外汇总 recent-turn / retrieved-memory / worker-evidence 的实际打包数量，以及 pending / waiting / open-question / decision-or-constraint 的 carry-forward 情况，方便直接看高压上下文下哪些信息被保住了。
+`prompt-console` 现在会额外汇总 recent-turn / retrieved-memory / worker-evidence 的实际打包数量，以及 pending / waiting / open-question / decision-or-constraint 的 carry-forward 情况；acceptance / soak 也已把这些计数和 runtime waiting-point 一起编进长链验证，方便直接看高压上下文下哪些信息被保住了。
 
 模型配置默认会按这个顺序查找：
 

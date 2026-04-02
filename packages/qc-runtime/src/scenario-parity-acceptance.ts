@@ -92,13 +92,17 @@ const SCENARIOS: ScenarioParityAcceptanceScenarioDescriptor[] = [
   {
     scenarioId: "context-evidence-heavy-and-reentry",
     area: "context",
-    title: "evidence-heavy 与 re-entry continuity",
-    summary: "验证高压预算和 re-entry 下，pending work / open questions / decisions 仍稳定。",
+    title: "context pressure / re-entry / runtime visibility",
+    summary:
+      "验证高压预算和 re-entry 下，pending work / open questions / decisions 仍稳定，且 prompt/runtime 诊断对等待点与 carry-forward 的判断一致。",
     caseIds: [
       "context-evidence-heavy-keeps-pending-work",
       "context-reentry-preserves-active-tasks-and-open-questions",
       "context-continuity-keeps-decisions-and-constraints-under-budget",
       "context-continuity-keeps-journal-notes-under-budget",
+      "runtime-prompt-console-summarizes-boundaries",
+      "context-runtime-pressure-keeps-carry-forward-and-waiting-visible",
+      "runtime-chain-query-answers-root-active-and-waiting-point",
     ],
   },
   {

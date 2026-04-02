@@ -1061,6 +1061,210 @@ const BUILT_IN_CASES: RegressionCase[] = [
     },
   },
   {
+    caseId: "context-runtime-pressure-keeps-carry-forward-and-waiting-visible",
+    title: "Context/runtime pressure keeps carry-forward and waiting visible",
+    area: "runtime",
+    summary:
+      "Under tight prompt pressure, prompt diagnostics and runtime summary should still agree on pending work, unresolved questions, and the active waiting point.",
+    run() {
+      const progressEvents: RuntimeProgressEvent[] = [
+        {
+          progressId: "progress:context-pressure:compaction",
+          threadId: "thread-1",
+          chainId: "flow:flow-context-pressure",
+          spanId: "worker:browser:task-context-pressure",
+          subjectKind: "role_run",
+          subjectId: "role:role-lead",
+          phase: "degraded",
+          progressKind: "boundary",
+          summary: "Context compaction preserved pending browser verification and unresolved pricing question.",
+          recordedAt: 30,
+          flowId: "flow-context-pressure",
+          taskId: "task-context-pressure",
+          roleId: "role-lead",
+          metadata: {
+            boundaryKind: "prompt_compaction",
+            modelId: "gpt-5",
+            modelChainId: "acceptance_chain",
+            assemblyFingerprint: "fp-context-pressure",
+            compactedSegments: ["recent-turns", "retrieved-memory", "worker-evidence"],
+            contextDiagnostics: {
+              continuity: {
+                hasThreadSummary: true,
+                hasSessionMemory: true,
+                hasRoleScratchpad: true,
+                hasContinuationContext: true,
+                carriesPendingWork: true,
+                carriesWaitingOn: true,
+                carriesOpenQuestions: true,
+                carriesDecisionOrConstraint: true,
+              },
+              recentTurns: {
+                availableCount: 8,
+                selectedCount: 5,
+                packedCount: 3,
+                salientEarlierCount: 2,
+                compacted: true,
+              },
+              retrievedMemory: {
+                availableCount: 6,
+                selectedCount: 4,
+                packedCount: 2,
+                compacted: true,
+                userPreferenceCount: 1,
+                threadMemoryCount: 1,
+                sessionMemoryCount: 2,
+                knowledgeNoteCount: 1,
+                journalNoteCount: 1,
+              },
+              workerEvidence: {
+                totalCount: 4,
+                admittedCount: 3,
+                selectedCount: 3,
+                packedCount: 1,
+                compacted: true,
+                promotableCount: 2,
+                observationalCount: 1,
+                fullCount: 1,
+                summaryOnlyCount: 2,
+                continuationRelevantCount: 2,
+              },
+            },
+          },
+        },
+        {
+          progressId: "progress:context-pressure:reduction",
+          threadId: "thread-1",
+          chainId: "flow:flow-context-pressure",
+          spanId: "worker:browser:task-context-pressure",
+          subjectKind: "role_run",
+          subjectId: "role:role-lead",
+          phase: "waiting",
+          progressKind: "boundary",
+          summary: "Envelope reduction kept the browser verification blocker and pricing question visible.",
+          recordedAt: 35,
+          flowId: "flow-context-pressure",
+          taskId: "task-context-pressure",
+          roleId: "role-lead",
+          metadata: {
+            boundaryKind: "request_envelope_reduction",
+            modelId: "gpt-5",
+            modelChainId: "acceptance_chain",
+            assemblyFingerprint: "fp-context-pressure",
+            reductionLevel: "minimal",
+            compactedSegments: ["recent-turns", "worker-evidence"],
+            omittedSections: ["knowledge-notes"],
+            contextDiagnostics: {
+              continuity: {
+                hasThreadSummary: true,
+                hasSessionMemory: true,
+                hasRoleScratchpad: true,
+                hasContinuationContext: true,
+                carriesPendingWork: true,
+                carriesWaitingOn: true,
+                carriesOpenQuestions: true,
+                carriesDecisionOrConstraint: true,
+              },
+              recentTurns: {
+                availableCount: 8,
+                selectedCount: 5,
+                packedCount: 2,
+                salientEarlierCount: 2,
+                compacted: true,
+              },
+              retrievedMemory: {
+                availableCount: 6,
+                selectedCount: 4,
+                packedCount: 1,
+                compacted: true,
+                userPreferenceCount: 1,
+                threadMemoryCount: 1,
+                sessionMemoryCount: 2,
+                knowledgeNoteCount: 1,
+                journalNoteCount: 1,
+              },
+              workerEvidence: {
+                totalCount: 4,
+                admittedCount: 3,
+                selectedCount: 2,
+                packedCount: 1,
+                compacted: true,
+                promotableCount: 2,
+                observationalCount: 1,
+                fullCount: 1,
+                summaryOnlyCount: 2,
+                continuationRelevantCount: 2,
+              },
+            },
+          },
+        },
+      ];
+      const promptReport = buildPromptConsoleReport(progressEvents);
+      const chain: RuntimeChain = {
+        chainId: "flow:flow-context-pressure",
+        threadId: "thread-1",
+        rootKind: "flow",
+        rootId: "flow-context-pressure",
+        flowId: "flow-context-pressure",
+        createdAt: 10,
+        updatedAt: 35,
+      };
+      const status: RuntimeChainStatus = {
+        chainId: chain.chainId,
+        threadId: chain.threadId,
+        activeSpanId: "worker:browser:task-context-pressure",
+        activeSubjectKind: "browser_session",
+        activeSubjectId: "browser-session-context-pressure",
+        phase: "waiting",
+        continuityState: "waiting",
+        waitingReason: "waiting on browser pricing verification",
+        currentWaitingPoint: "Await pricing diff verification and enterprise-tier confirmation before merge.",
+        latestSummary: "Compaction preserved the browser blocker and unresolved pricing question.",
+        attention: true,
+        updatedAt: 35,
+      };
+      const runtimeSummary = buildRuntimeSummaryReport({
+        entries: [{ chain, status }],
+        limit: 5,
+        now: 35,
+      });
+      const details = [
+        `boundaries=${promptReport.totalBoundaries}`,
+        `pending=${promptReport.continuityCarryForwardCounts.pendingWork}`,
+        `waiting=${promptReport.continuityCarryForwardCounts.waitingOn}`,
+        `questions=${promptReport.continuityCarryForwardCounts.openQuestions}`,
+        `decisions=${promptReport.continuityCarryForwardCounts.decisionsOrConstraints}`,
+        `recent=${promptReport.totalRecentTurnsPacked}/${promptReport.totalRecentTurnsSelected}`,
+        `memory=${promptReport.totalRetrievedMemoryPacked}/${promptReport.totalRetrievedMemoryCandidates}`,
+        `evidence=${promptReport.totalWorkerEvidencePacked}/${promptReport.totalWorkerEvidenceCandidates}`,
+        `runtime=${runtimeSummary.activeChains[0]?.canonicalState ?? "-"}`,
+        `continuity=${runtimeSummary.activeChains[0]?.continuityState ?? "-"}`,
+        `waitingPoint=${runtimeSummary.activeChains[0]?.currentWaitingPoint ?? "-"}`,
+      ];
+      const passed =
+        promptReport.totalBoundaries === 2 &&
+        promptReport.modelChainCounts.acceptance_chain === 2 &&
+        promptReport.continuityCarryForwardCounts.pendingWork === 2 &&
+        promptReport.continuityCarryForwardCounts.waitingOn === 2 &&
+        promptReport.continuityCarryForwardCounts.openQuestions === 2 &&
+        promptReport.continuityCarryForwardCounts.decisionsOrConstraints === 2 &&
+        promptReport.totalRecentTurnsSelected === 10 &&
+        promptReport.totalRecentTurnsPacked === 5 &&
+        promptReport.totalRetrievedMemoryCandidates === 8 &&
+        promptReport.totalRetrievedMemoryPacked === 3 &&
+        promptReport.totalWorkerEvidenceCandidates === 5 &&
+        promptReport.totalWorkerEvidencePacked === 2 &&
+        runtimeSummary.waitingCount === 1 &&
+        runtimeSummary.attentionCount === 1 &&
+        runtimeSummary.activeChains[0]?.canonicalState === "waiting" &&
+        runtimeSummary.activeChains[0]?.continuityState === "waiting" &&
+        runtimeSummary.activeChains[0]?.activeSubjectKind === "browser_session" &&
+        runtimeSummary.activeChains[0]?.currentWaitingPoint ===
+          "Await pricing diff verification and enterprise-tier confirmation before merge.";
+      return buildResult(this, passed, details);
+    },
+  },
+  {
     caseId: "parallel-three-shard-success-ready-to-merge",
     title: "Parallel shard success reaches merge-ready state",
     area: "parallel",
