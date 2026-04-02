@@ -1205,8 +1205,13 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   console.log("Operator Summary");
   console.log(`  total attention: ${report.totalAttentionCount}`);
   console.log(
-    `  flow=${report.flow.attentionCount}  replay=${report.replay.attentionCount}  governance=${report.governance.attentionCount}  recovery=${report.recovery.attentionCount}`
+    `  flow=${report.flow.attentionCount}  replay=${report.replay.attentionCount}  governance=${report.governance.attentionCount}  recovery=${report.recovery.attentionCount}  prompt=${report.promptAttentionCount}`
   );
+  if (report.prompt.totalBoundaries > 0) {
+    console.log(
+      `  prompt pressure: boundaries=${report.prompt.totalBoundaries}  compactions=${report.prompt.compactionCount}  reductions=${report.prompt.reductionCount}  memory=${report.prompt.totalRetrievedMemoryPacked}/${report.prompt.totalRetrievedMemoryCandidates}  evidence=${report.prompt.totalWorkerEvidencePacked}/${report.prompt.totalWorkerEvidenceCandidates}`
+    );
+  }
   if (report.attentionOverview) {
     console.log(
       `  unique cases=${report.attentionOverview.uniqueCaseCount}  case-state=${formatCountMap(report.attentionOverview.caseStateCounts)}  severity=${formatCountMap(report.attentionOverview.severityCounts)}  lifecycle=${formatCountMap(report.attentionOverview.lifecycleCounts)}`
@@ -1225,6 +1230,9 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
         }
         if (entry.action) {
           parts.push(`action=${entry.action}`);
+        }
+        if (entry.allowedActions && entry.allowedActions.length > 0) {
+          parts.push(`allowed=${entry.allowedActions.map(describeAttemptAction).join("/")}`);
         }
         if (entry.browserContinuityState) {
           parts.push(`browser=${entry.browserContinuityState}`);
@@ -1316,6 +1324,9 @@ function printOperatorAttention(report: OperatorAttentionReport): void {
       if (entry.action) {
         parts.push(`action=${entry.action}`);
       }
+      if (entry.allowedActions && entry.allowedActions.length > 0) {
+        parts.push(`allowed=${entry.allowedActions.map(describeAttemptAction).join("/")}`);
+      }
       if (entry.browserContinuityState) {
         parts.push(`browser=${entry.browserContinuityState}`);
       }
@@ -1341,6 +1352,9 @@ function printOperatorAttention(report: OperatorAttentionReport): void {
     }
     if (item.action) {
       parts.push(`action=${item.action}`);
+    }
+    if (item.allowedActions && item.allowedActions.length > 0) {
+      parts.push(`allowed=${item.allowedActions.map(describeAttemptAction).join("/")}`);
     }
     if (item.browserContinuityState) {
       parts.push(`browser=${item.browserContinuityState}`);
@@ -2430,6 +2444,22 @@ function printReplayBundle(bundle: ReplayIncidentBundle): void {
     console.log(
       `  workflow: ${bundle.recoveryWorkflow.status}  next=${describeRecoveryAction(bundle.recoveryWorkflow.nextAction)}  summary=${bundle.recoveryWorkflow.summary}`
     );
+  }
+  if (bundle.recoveryOperator) {
+    console.log(
+      `  operator gate: ${bundle.recoveryOperator.currentGate}  next=${describeRecoveryAction(bundle.recoveryOperator.nextAction)}  phase=${bundle.recoveryOperator.phase}`
+    );
+    console.log(`  operator summary: ${bundle.recoveryOperator.phaseSummary}`);
+    console.log(
+      `  allowed actions: ${
+        bundle.recoveryOperator.allowedActions.length > 0
+          ? bundle.recoveryOperator.allowedActions.map(describeAttemptAction).join(", ")
+          : "none"
+      }`
+    );
+    if (bundle.recoveryOperator.latestBrowserOutcome) {
+      console.log(`  latest browser outcome: ${bundle.recoveryOperator.latestBrowserOutcome}`);
+    }
   }
   if (bundle.recoveryProgress) {
     console.log(

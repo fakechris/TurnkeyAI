@@ -5,7 +5,7 @@ import { listBoundedRegressionCases, runBoundedRegressionSuite } from "./bounded
 
 test("bounded regression harness lists built-in cases", () => {
   const cases = listBoundedRegressionCases();
-  assert.ok(cases.length >= 33);
+  assert.ok(cases.length >= 34);
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-aligns-manual-recovery-and-operator-attention"));
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-keeps-browser-recovered-chain-active"));
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-preserves-reconnect-window-before-stale"));
@@ -32,6 +32,7 @@ test("bounded regression harness lists built-in cases", () => {
   assert.ok(cases.some((item) => item.caseId === "operator-attention-aligns-with-summary"));
   assert.ok(cases.some((item) => item.caseId === "operator-case-cards-preserve-order-and-metadata"));
   assert.ok(cases.some((item) => item.caseId === "operator-surfaces-track-recovery-lifecycle"));
+  assert.ok(cases.some((item) => item.caseId === "replay-bundle-exposes-recovery-operator-gate"));
   assert.ok(cases.some((item) => item.caseId === "parallel-follow-up-summary-stays-open"));
   assert.ok(cases.some((item) => item.caseId === "recovery-approval-fallback-chain"));
   assert.ok(cases.some((item) => item.caseId === "replay-console-attention-stays-aligned"));
@@ -92,6 +93,7 @@ test("bounded regression harness can run governance and parallel operator cases"
 
 test("bounded regression harness can run extended parallel and recovery chain cases", () => {
   const result = runBoundedRegressionSuite([
+    "replay-bundle-exposes-recovery-operator-gate",
     "parallel-follow-up-summary-stays-open",
     "parallel-follow-up-summary-closes-after-recovery",
     "recovery-approval-fallback-chain",
@@ -99,7 +101,7 @@ test("bounded regression harness can run extended parallel and recovery chain ca
     "replay-console-attention-stays-aligned",
     "replay-console-surfaces-workflow-state",
   ]);
-  assert.equal(result.totalCases, 6);
+  assert.equal(result.totalCases, 7);
   assert.equal(result.failedCases, 0);
 });
 

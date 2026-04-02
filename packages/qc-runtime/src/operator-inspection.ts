@@ -8,14 +8,17 @@ import type {
   OperatorCaseState,
   OperatorSummaryReport,
   PermissionCacheRecord,
+  PromptBoundaryEntry,
+  PromptConsoleReport,
   RecoveryConsoleReport,
   RecoveryRun,
   ReplayRecord,
   RoleId,
+  RuntimeProgressEvent,
   ShardResultRecord,
   TeamEvent,
 } from "@turnkeyai/core-types/team";
-import { describeRecoveryRunGate } from "@turnkeyai/core-types/recovery-operator-semantics";
+import { describeRecoveryRunGate, listAllowedRecoveryRunActions } from "@turnkeyai/core-types/recovery-operator-semantics";
 import { detectConflictRoleIds, detectDuplicateRoleIds } from "@turnkeyai/core-types/shard-result-analysis";
 import {
   buildRecoveryRunProgress,
@@ -24,6 +27,7 @@ import {
   buildReplayInspectionReport,
   listActionableReplayIncidents,
 } from "./replay-inspection";
+import { buildPromptConsoleReport } from "./prompt-inspection";
 
 export function buildFlowConsoleReport(flows: FlowLedger[], limit = 10): FlowConsoleReport {
   const statusCounts: FlowConsoleReport["statusCounts"] = {};
@@ -232,6 +236,7 @@ export function buildOperatorSummaryReport(input: {
   events: TeamEvent[];
   replays: ReplayRecord[];
   recoveryRuns: RecoveryRun[];
+  progressEvents?: RuntimeProgressEvent[];
   limit?: number;
 }): OperatorSummaryReport {
   const limit = input.limit ?? 10;
@@ -239,7 +244,9 @@ export function buildOperatorSummaryReport(input: {
   const replay = buildReplayConsoleReport(input.replays, limit);
   const governance = buildGovernanceConsoleReport(input.permissionRecords, input.events, limit);
   const recovery = buildRecoveryConsoleReport(input.recoveryRuns, limit);
+  const prompt = buildPromptConsoleReport(input.progressEvents ?? [], limit);
   const attention = buildOperatorAttentionReport({ ...input, limit: Number.MAX_SAFE_INTEGER });
+  const promptAttentionCount = attention.sourceCounts.prompt ?? 0;
   const resolvedRecentCases = buildResolvedRecentCaseSummaries(input.replays, Math.min(limit, 5));
   const activeCases = attention.cases
     .slice()
@@ -253,6 +260,7 @@ export function buildOperatorSummaryReport(input: {
       lifecycle: entry.lifecycle,
       ...(entry.gate ? { gate: entry.gate } : {}),
       ...(entry.action ? { action: entry.action } : {}),
+      ...(entry.allowedActions && entry.allowedActions.length > 0 ? { allowedActions: entry.allowedActions } : {}),
       ...(entry.browserContinuityState ? { browserContinuityState: entry.browserContinuityState } : {}),
       ...(entry.reasons && entry.reasons.length > 0 ? { reasonPreview: entry.reasons[0] } : {}),
       latestUpdate: entry.latestUpdate,
@@ -263,7 +271,10 @@ export function buildOperatorSummaryReport(input: {
     replay,
     governance,
     recovery,
-    totalAttentionCount: flow.attentionCount + replay.attentionCount + governance.attentionCount + recovery.attentionCount,
+    prompt,
+    promptAttentionCount,
+    totalAttentionCount:
+      flow.attentionCount + replay.attentionCount + governance.attentionCount + recovery.attentionCount + promptAttentionCount,
     attentionOverview: {
       uniqueCaseCount: attention.uniqueCaseCount,
       caseStateCounts: {
@@ -288,6 +299,7 @@ export function buildOperatorAttentionReport(input: {
   events: TeamEvent[];
   replays: ReplayRecord[];
   recoveryRuns: RecoveryRun[];
+  progressEvents?: RuntimeProgressEvent[];
   limit?: number;
 }): OperatorAttentionReport {
   const limit = input.limit ?? 20;
@@ -298,6 +310,7 @@ export function buildOperatorAttentionReport(input: {
   const replayIncidents = listActionableReplayIncidents(input.replays, replayInspection);
   const governance = buildGovernanceConsoleReport(input.permissionRecords, input.events, fullReportLimit);
   const recovery = buildRecoveryConsoleReport(input.recoveryRuns, fullReportLimit);
+  const prompt = buildPromptConsoleReport(input.progressEvents ?? [], fullReportLimit);
   const bundleByGroupId = new Map(
     replayIncidents.map((incident) => [incident.groupId, buildReplayIncidentBundle(input.replays, incident.groupId)])
   );
@@ -410,6 +423,7 @@ export function buildOperatorAttentionReport(input: {
         run.status,
         ...(run.waitingReason ? [run.waitingReason] : []),
       ],
+      allowedActions: listAllowedRecoveryRunActions(run.status).filter((candidate) => candidate !== "dispatch"),
       ...(run.browserSession?.resumeMode === "hot"
         ? { browserContinuityState: "stable" as const }
         : run.browserSession?.resumeMode
@@ -418,7 +432,9 @@ export function buildOperatorAttentionReport(input: {
       summary: run.latestSummary,
       ...(run.nextAction !== "none" ? { action: run.nextAction } : {}),
     })),
+    ...buildPromptAttentionItems(prompt),
   ].sort(compareOperatorAttentionItems);
+  const promptAttentionCount = allItems.filter((item) => item.source === "prompt").length;
 
   const groupedByCase = new Map<string, OperatorAttentionItem[]>();
   for (const item of allItems) {
@@ -447,7 +463,12 @@ export function buildOperatorAttentionReport(input: {
   const cases = allCases.slice(0, limit);
 
   return {
-    totalItems: flow.attentionCount + replay.attentionCount + governance.attentionCount + recovery.attentionCount,
+    totalItems:
+      flow.attentionCount +
+      replay.attentionCount +
+      governance.attentionCount +
+      recovery.attentionCount +
+      promptAttentionCount,
     returnedItems: items.length,
     uniqueCaseCount: new Set(allItems.map((item) => item.caseKey)).size,
     sourceCounts: {
@@ -455,6 +476,7 @@ export function buildOperatorAttentionReport(input: {
       replay: replay.attentionCount,
       governance: governance.attentionCount,
       recovery: recovery.attentionCount,
+      prompt: promptAttentionCount,
     },
     caseStateCounts,
     severityCounts,
@@ -463,6 +485,72 @@ export function buildOperatorAttentionReport(input: {
     cases,
     items,
   };
+}
+
+function buildPromptAttentionItems(prompt: PromptConsoleReport): OperatorAttentionItem[] {
+  return prompt.latestBoundaries
+    .filter((boundary) => boundary.boundaryKind === "request_envelope_reduction" || shouldEscalatePromptCompaction(boundary))
+    .map((boundary) => ({
+      source: "prompt" as const,
+      key: boundary.progressId,
+      caseKey: buildPromptCaseKey(boundary),
+      headline: "",
+      recordedAt: boundary.recordedAt,
+      severity: boundary.boundaryKind === "request_envelope_reduction" ? "critical" : "warning",
+      lifecycle: boundary.boundaryKind === "request_envelope_reduction" ? "blocked" : "open",
+      status: boundary.boundaryKind,
+      gate: boundary.boundaryKind === "request_envelope_reduction" ? "request_envelope_reduction" : "prompt_compaction",
+      reasons: compactPromptReasons(boundary),
+      summary: boundary.summary,
+      action: "inspect_prompt_boundary",
+    }));
+}
+
+function buildPromptCaseKey(boundary: PromptBoundaryEntry): string {
+  if (boundary.taskId) {
+    return `prompt:${boundary.taskId}`;
+  }
+  if (boundary.flowId) {
+    return `prompt:${boundary.flowId}`;
+  }
+  return `prompt:${boundary.progressId}`;
+}
+
+function shouldEscalatePromptCompaction(boundary: PromptBoundaryEntry): boolean {
+  if (boundary.boundaryKind !== "prompt_compaction") {
+    return false;
+  }
+  const diagnostics = boundary.contextDiagnostics;
+  if (!diagnostics) {
+    return (boundary.compactedSegments?.length ?? 0) >= 2;
+  }
+  return (
+    diagnostics.recentTurns.packedCount < diagnostics.recentTurns.selectedCount ||
+    diagnostics.retrievedMemory.packedCount < diagnostics.retrievedMemory.selectedCount ||
+    diagnostics.workerEvidence.packedCount < diagnostics.workerEvidence.selectedCount
+  );
+}
+
+function compactPromptReasons(boundary: PromptBoundaryEntry): string[] {
+  const reasons: string[] = [];
+  if (boundary.reductionLevel) {
+    reasons.push(boundary.reductionLevel);
+  }
+  if ((boundary.compactedSegments?.length ?? 0) > 0) {
+    reasons.push(...(boundary.compactedSegments ?? []).slice(0, 3));
+  }
+  if (boundary.contextDiagnostics) {
+    if (boundary.contextDiagnostics.continuity.carriesPendingWork) {
+      reasons.push("pending");
+    }
+    if (boundary.contextDiagnostics.continuity.carriesWaitingOn) {
+      reasons.push("waiting");
+    }
+    if (boundary.contextDiagnostics.continuity.carriesOpenQuestions) {
+      reasons.push("open_questions");
+    }
+  }
+  return [...new Set(reasons)];
 }
 
 function deriveReplayAttentionLifecycle(
@@ -650,6 +738,7 @@ function buildAttentionCaseSummary(
     sources: unique(ordered.map((item) => item.source)),
     ...(primary.gate ? { gate: primary.gate } : {}),
     ...(primary.action ? { action: primary.action } : {}),
+    ...(primary.allowedActions && primary.allowedActions.length > 0 ? { allowedActions: primary.allowedActions } : {}),
     ...(primary.browserContinuityState ? { browserContinuityState: primary.browserContinuityState } : {}),
     ...(primary.reasons && primary.reasons.length > 0 ? { reasons: primary.reasons } : {}),
   };

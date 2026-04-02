@@ -64,6 +64,7 @@ import {
 } from "@turnkeyai/qc-runtime/operator-inspection";
 import { buildPromptConsoleReport } from "@turnkeyai/qc-runtime/prompt-inspection";
 import {
+  attachRecoveryRunToReplayIncidentBundle,
   buildReplayConsoleReport,
   buildReplayIncidentBundle,
   buildReplayInspectionReport,
@@ -791,11 +792,12 @@ const server = http.createServer(async (req, res) => {
       if (limit == null) {
         return sendJson(res, 400, { error: "limit must be a positive integer" });
       }
-      const [flows, permissionRecords, events, synced] = await Promise.all([
+      const [flows, permissionRecords, events, synced, progressEvents] = await Promise.all([
         flowLedgerStore.listByThread(threadId),
         permissionCacheStore.listByThread(threadId),
         teamEventBus.listRecent(threadId, Math.max(limit, 200)),
         loadRecoveryRuntime(threadId),
+        runtimeProgressStore.listByThread(threadId),
       ]);
       return sendJson(
         res,
@@ -806,6 +808,7 @@ const server = http.createServer(async (req, res) => {
           events,
           replays: synced.records,
           recoveryRuns: synced.runs,
+          progressEvents,
           limit,
         })
       );
@@ -820,11 +823,12 @@ const server = http.createServer(async (req, res) => {
       if (limit == null) {
         return sendJson(res, 400, { error: "limit must be a positive integer" });
       }
-      const [flows, permissionRecords, events, synced] = await Promise.all([
+      const [flows, permissionRecords, events, synced, progressEvents] = await Promise.all([
         flowLedgerStore.listByThread(threadId),
         permissionCacheStore.listByThread(threadId),
         teamEventBus.listRecent(threadId, Math.max(limit, 200)),
         loadRecoveryRuntime(threadId),
+        runtimeProgressStore.listByThread(threadId),
       ]);
       return sendJson(
         res,
@@ -835,6 +839,7 @@ const server = http.createServer(async (req, res) => {
           events,
           replays: synced.records,
           recoveryRuns: synced.runs,
+          progressEvents,
           limit,
         })
       );
@@ -1119,13 +1124,12 @@ const server = http.createServer(async (req, res) => {
       }
       const recoveryRun = synced.runs.find((run) => run.sourceGroupId === bundle.group.groupId);
       if (recoveryRun) {
-        bundle.recoveryRun = recoveryRun;
-        bundle.recoveryProgress = buildRecoveryRunProgress(recoveryRun);
-        bundle.recoveryTimeline = buildRecoveryRunTimeline(
-          recoveryRun,
-          synced.records,
-          await recoveryRunEventStore.listByRecoveryRun(recoveryRun.recoveryRunId)
-        );
+        attachRecoveryRunToReplayIncidentBundle({
+          bundle,
+          run: recoveryRun,
+          records: synced.records,
+          events: await recoveryRunEventStore.listByRecoveryRun(recoveryRun.recoveryRunId),
+        });
       }
       return sendJson(res, 200, bundle);
     }

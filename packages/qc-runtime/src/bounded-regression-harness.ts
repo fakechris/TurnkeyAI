@@ -12,6 +12,7 @@ import type {
 } from "@turnkeyai/core-types/team";
 
 import {
+  attachRecoveryRunToReplayIncidentBundle,
   buildRecoveryRuns,
   buildReplayConsoleReport,
   buildReplayIncidentBundle,
@@ -1684,6 +1685,7 @@ const BUILT_IN_CASES: RegressionCase[] = [
         `governance=${report.governance.attentionCount}`,
         `recovery=${report.recovery.attentionCount}`,
         `recoveryGate=${report.recovery.gateCounts["waiting for approval"] ?? 0}`,
+        `allowed=${report.attentionOverview?.activeCases?.find((item) => item.caseKey === "incident:task-op")?.allowedActions?.join(",") ?? "none"}`,
       ];
       const passed =
         report.totalAttentionCount === 4 &&
@@ -1691,7 +1693,9 @@ const BUILT_IN_CASES: RegressionCase[] = [
         report.replay.attentionCount === 1 &&
         report.governance.attentionCount === 1 &&
         report.recovery.attentionCount === 1 &&
-        report.recovery.gateCounts["waiting for approval"] === 1;
+        report.recovery.gateCounts["waiting for approval"] === 1 &&
+        (report.attentionOverview?.activeCases?.find((item) => item.caseKey === "incident:task-op")?.allowedActions?.join(",") ?? "") ===
+          "approve,reject";
       return buildResult(this, passed, details);
     },
   },
@@ -2274,6 +2278,90 @@ const BUILT_IN_CASES: RegressionCase[] = [
         closedBundle?.recoveryWorkflow?.status === "recovered" &&
         closedBundle?.followUpSummary?.closedGroups === 1;
       return buildResult(this, Boolean(passed), details);
+    },
+  },
+  {
+    caseId: "replay-bundle-exposes-recovery-operator-gate",
+    title: "Replay bundle exposes recovery operator gate and allowed actions",
+    area: "recovery",
+    summary: "Replay bundles should expose the current recovery gate, allowed actions, and latest browser outcome once a recovery run is attached.",
+    run() {
+      const records = [
+        {
+          replayId: "task-bundle-op:worker:worker:browser:task:task-bundle-op",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 10,
+          threadId: "thread-1",
+          taskId: "task-bundle-op",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "approval required before resume",
+          failure: {
+            category: "permission_denied",
+            layer: "worker",
+            retryable: false,
+            message: "approval required before continuing",
+            recommendedAction: "request_approval",
+          },
+        },
+      ] satisfies ReplayRecord[];
+
+      const bundle = buildReplayIncidentBundle(records, "task-bundle-op");
+      if (!bundle) {
+        return buildResult(this, false, ["bundle=missing"]);
+      }
+      const enriched = attachRecoveryRunToReplayIncidentBundle({
+        bundle,
+        run: {
+          recoveryRunId: buildRecoveryRunId("task-bundle-op"),
+          threadId: "thread-1",
+          sourceGroupId: "task-bundle-op",
+          latestStatus: "failed",
+          status: "waiting_approval",
+          nextAction: "request_approval",
+          autoDispatchReady: false,
+          requiresManualIntervention: true,
+          latestSummary: "Approval required before browser resume.",
+          waitingReason: "Operator approval required.",
+          currentAttemptId: "attempt-bundle-op",
+          browserSession: {
+            sessionId: "browser-1",
+            targetId: "target-1",
+            resumeMode: "warm",
+          },
+          attempts: [
+            {
+              attemptId: "attempt-bundle-op",
+              action: "approve",
+              requestedAt: 10,
+              updatedAt: 11,
+              status: "waiting_approval",
+              nextAction: "request_approval",
+              summary: "Approval pending.",
+              browserOutcome: "warm_attach",
+            },
+          ],
+          createdAt: 10,
+          updatedAt: 11,
+        },
+        records,
+      });
+
+      const details = [
+        `gate=${enriched.recoveryOperator?.currentGate ?? "-"}`,
+        `allowed=${enriched.recoveryOperator?.allowedActions.join(",") ?? "-"}`,
+        `next=${enriched.recoveryOperator?.nextAction ?? "-"}`,
+        `phase=${enriched.recoveryOperator?.phase ?? "-"}`,
+        `browser=${enriched.recoveryOperator?.latestBrowserOutcome ?? "-"}`,
+      ];
+      const passed =
+        enriched.recoveryOperator?.currentGate === "waiting for approval" &&
+        enriched.recoveryOperator?.allowedActions.join(",") === "approve,reject" &&
+        enriched.recoveryOperator?.nextAction === "request_approval" &&
+        enriched.recoveryOperator?.phase === "awaiting_approval" &&
+        enriched.recoveryOperator?.latestBrowserOutcome === "warm_attach";
+      return buildResult(this, passed, details);
     },
   },
   {

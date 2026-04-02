@@ -1340,6 +1340,15 @@ export interface ReplayIncidentBundle {
   followUpTimeline: ReplayTimelineEntry[];
   recoveryTimeline?: RecoveryRunTimelineEntry[];
   recoveryProgress?: RecoveryRunProgress;
+  recoveryOperator?: {
+    currentGate: string;
+    allowedActions: RecoveryRunAction[];
+    nextAction: RecoveryRun["nextAction"];
+    phase: RecoveryRunProgress["phase"];
+    phaseSummary: string;
+    latestSummary: string;
+    latestBrowserOutcome?: RecoveryBrowserOutcome;
+  };
   recoveryWorkflow?: {
     status: "not_started" | "running" | "recovered" | "recovery_failed" | "manual_follow_up";
     nextAction: ReplayRecoveryPlan["nextAction"] | "none";
@@ -1512,6 +1521,8 @@ export interface OperatorSummaryReport {
   replay: ReplayConsoleReport;
   governance: GovernanceConsoleReport;
   recovery: RecoveryConsoleReport;
+  prompt: PromptConsoleReport;
+  promptAttentionCount: number;
   totalAttentionCount: number;
   attentionOverview?: {
     uniqueCaseCount: number;
@@ -1526,6 +1537,7 @@ export interface OperatorSummaryReport {
       lifecycle: OperatorAttentionItem["lifecycle"];
       gate?: string;
       action?: string;
+      allowedActions?: RecoveryRunAction[];
       browserContinuityState?: ReplayBrowserContinuitySummary["state"];
       reasonPreview?: string;
       latestUpdate: string;
@@ -1560,7 +1572,7 @@ export interface OperatorSummaryReport {
 }
 
 export interface OperatorAttentionItem {
-  source: "flow" | "replay" | "governance" | "recovery";
+  source: "flow" | "replay" | "governance" | "recovery" | "prompt";
   key: string;
   caseKey: string;
   headline: string;
@@ -1573,6 +1585,7 @@ export interface OperatorAttentionItem {
   reasons?: string[];
   browserContinuityState?: ReplayBrowserContinuitySummary["state"];
   action?: string;
+  allowedActions?: RecoveryRunAction[];
 }
 
 export interface OperatorAttentionCaseSummary {
@@ -1588,6 +1601,7 @@ export interface OperatorAttentionCaseSummary {
   sources: OperatorAttentionItem["source"][];
   gate?: string;
   action?: string;
+  allowedActions?: RecoveryRunAction[];
   browserContinuityState?: ReplayBrowserContinuitySummary["state"];
   reasons?: string[];
 }

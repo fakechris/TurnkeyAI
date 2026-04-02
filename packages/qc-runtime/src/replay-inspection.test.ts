@@ -4,6 +4,7 @@ import test from "node:test";
 import type { RecoveryRun } from "@turnkeyai/core-types/team";
 
 import {
+  attachRecoveryRunToReplayIncidentBundle,
   buildRecoveryRunTimeline,
   buildRecoveryRunProgress,
   buildRecoveryRunId,
@@ -839,6 +840,78 @@ test("replay inspection materializes waiting approval recovery runs", () => {
   assert.equal(runs[0]?.status, "waiting_approval");
   assert.equal(runs[0]?.nextAction, "request_approval");
   assert.equal(runs[0]?.requiresManualIntervention, true);
+});
+
+test("replay incident bundle can expose recovery operator gate and allowed actions", () => {
+  const records = [
+    {
+      replayId: "task-operator:worker:worker:browser:task:task-operator",
+      layer: "worker",
+      status: "failed",
+      recordedAt: 10,
+      threadId: "thread-1",
+      taskId: "task-operator",
+      roleId: "role-operator",
+      workerType: "browser",
+      summary: "approval required before resume",
+      failure: {
+        category: "permission_denied",
+        layer: "worker",
+        retryable: false,
+        message: "approval required before continuing",
+        recommendedAction: "request_approval",
+      },
+    },
+  ] satisfies Parameters<typeof buildReplayInspectionReport>[0];
+
+  const bundle = buildReplayIncidentBundle(records, "task-operator");
+  assert.ok(bundle);
+
+  const enriched = attachRecoveryRunToReplayIncidentBundle({
+    bundle: bundle!,
+    run: {
+      recoveryRunId: buildRecoveryRunId("task-operator"),
+      threadId: "thread-1",
+      sourceGroupId: "task-operator",
+      latestStatus: "failed",
+      status: "waiting_approval",
+      nextAction: "request_approval",
+      autoDispatchReady: false,
+      requiresManualIntervention: true,
+      latestSummary: "Approval required before browser resume.",
+      waitingReason: "Operator approval required.",
+      currentAttemptId: "attempt-operator",
+      browserSession: {
+        sessionId: "browser-1",
+        targetId: "target-1",
+        resumeMode: "warm",
+      },
+      attempts: [
+        {
+          attemptId: "attempt-operator",
+          action: "approve",
+          requestedAt: 10,
+          updatedAt: 11,
+          status: "waiting_approval",
+          nextAction: "request_approval",
+          summary: "Approval pending.",
+          browserOutcome: "warm_attach",
+        },
+      ],
+      createdAt: 10,
+      updatedAt: 11,
+    },
+    records,
+  });
+
+  assert.equal(enriched.recoveryOperator?.currentGate, "waiting for approval");
+  assert.deepEqual(enriched.recoveryOperator?.allowedActions, ["approve", "reject"]);
+  assert.equal(enriched.recoveryOperator?.nextAction, "request_approval");
+  assert.equal(enriched.recoveryOperator?.phase, "awaiting_approval");
+  assert.match(enriched.recoveryOperator?.phaseSummary ?? "", /approval/i);
+  assert.equal(enriched.recoveryOperator?.latestBrowserOutcome, "warm_attach");
+  assert.equal(enriched.recoveryProgress?.phase, "awaiting_approval");
+  assert.ok((enriched.recoveryTimeline?.length ?? 0) >= 1);
 });
 
 test("replay inspection projects recovery attempts into recovered run state", () => {

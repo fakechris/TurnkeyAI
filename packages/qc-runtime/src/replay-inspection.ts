@@ -19,6 +19,7 @@ import type {
   ReplayTaskSummary,
   ReplayTimelineEntry,
 } from "@turnkeyai/core-types/team";
+import { describeRecoveryRunGate, listAllowedRecoveryRunActions } from "@turnkeyai/core-types/recovery-operator-semantics";
 
 const REPLAY_LAYER_ORDER: ReplayLayer[] = ["scheduled", "role", "worker", "browser"];
 const MAX_RETRY_ATTEMPTS_BEFORE_ESCALATION = 2;
@@ -411,6 +412,31 @@ export function buildReplayIncidentBundle(records: ReplayRecord[], groupId: stri
     ...(followUpSummary ? { followUpSummary } : {}),
     ...(recoveryWorkflow ? { recoveryWorkflow } : {}),
   };
+}
+
+export function attachRecoveryRunToReplayIncidentBundle(input: {
+  bundle: ReplayIncidentBundle;
+  run: RecoveryRun;
+  records: ReplayRecord[];
+  events?: RecoveryRunEvent[];
+}): ReplayIncidentBundle {
+  const progress = buildRecoveryRunProgress(input.run);
+  const latestBrowserOutcome = [...input.run.attempts]
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .find((attempt) => attempt.browserOutcome)?.browserOutcome;
+  input.bundle.recoveryRun = input.run;
+  input.bundle.recoveryProgress = progress;
+  input.bundle.recoveryTimeline = buildRecoveryRunTimeline(input.run, input.records, input.events ?? []);
+  input.bundle.recoveryOperator = {
+    currentGate: describeRecoveryRunGate(input.run.status),
+    allowedActions: listAllowedRecoveryRunActions(input.run.status).filter((action) => action !== "dispatch"),
+    nextAction: input.run.nextAction,
+    phase: progress.phase,
+    phaseSummary: progress.phaseSummary,
+    latestSummary: input.run.latestSummary,
+    ...(latestBrowserOutcome ? { latestBrowserOutcome } : {}),
+  };
+  return input.bundle;
 }
 
 function buildBundleCaseHeadline(
