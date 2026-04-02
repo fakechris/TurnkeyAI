@@ -42,6 +42,7 @@
 - retrieval ranking / recall trigger / budget-aware prompt packing / tool-result pruning / long-running compression 第一版
 - prompt assembly compact-before-drop 与 `compactedSegments` 元数据
 - browser continuity matrix：lease reclaim / wrong-owner denial / reopen/new-target 长链验证
+- target-local snapshot/ref history 已覆盖同 URL 多 target 下的隔离与 reopen 后连续性验证
 - recovery timeline / bundle / TUI 工单视图与 phase/gate 对齐
 - context carry-forward：pending/waiting recall 优先级与 unresolved question memory carry-forward
 - browser continuity 已进入 replay bundle / console / TUI 视图
