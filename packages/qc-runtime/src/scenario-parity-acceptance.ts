@@ -129,6 +129,19 @@ const SCENARIOS: ScenarioParityAcceptanceScenarioDescriptor[] = [
     ],
   },
   {
+    scenarioId: "operator-triage-compound-incident",
+    area: "operator",
+    title: "compound incident triage",
+    summary:
+      "验证 operator triage 会把 browser manual follow-up incident、runtime waiting 和 prompt pressure 聚成一条可执行排障路径。",
+    caseIds: [
+      "browser-recovery-recovered-but-waiting-manual-stays-visible",
+      "runtime-summary-aligns-browser-recovered-manual-follow-up",
+      "context-runtime-pressure-keeps-carry-forward-and-waiting-visible",
+      "operator-triage-prioritizes-compound-incident",
+    ],
+  },
+  {
     scenarioId: "observability-live-chain-visibility",
     area: "observability",
     title: "整链活态可见与单查定位",

@@ -7,6 +7,8 @@ import type {
   OperatorAttentionCaseSummary,
   OperatorCaseState,
   OperatorSummaryReport,
+  OperatorTriageFocusArea,
+  OperatorTriageReport,
   PermissionCacheRecord,
   PromptBoundaryEntry,
   PromptConsoleReport,
@@ -15,6 +17,7 @@ import type {
   ReplayRecord,
   RoleId,
   RuntimeProgressEvent,
+  RuntimeSummaryReport,
   ShardResultRecord,
   TeamEvent,
 } from "@turnkeyai/core-types/team";
@@ -487,6 +490,91 @@ export function buildOperatorAttentionReport(input: {
   };
 }
 
+export function buildOperatorTriageReport(input: {
+  summary: OperatorSummaryReport;
+  attention: OperatorAttentionReport;
+  runtime: RuntimeSummaryReport;
+  limit?: number;
+}): OperatorTriageReport {
+  const limit = input.limit ?? 5;
+  const focusAreas: OperatorTriageFocusArea[] = [
+    ...input.attention.cases.map((entry) => mapAttentionCaseToTriageFocus(entry)),
+  ];
+
+  if (input.runtime.staleCount > 0) {
+    const stale = input.runtime.staleChains[0];
+    focusAreas.push({
+      area: "runtime",
+      label: "runtime-stale",
+      severity: "critical",
+      headline: `runtime stale chains=${input.runtime.staleCount}`,
+      reason:
+        stale?.staleReason ??
+        stale?.currentWaitingPoint ??
+        stale?.headline ??
+        "Runtime has stale chains that need inspection.",
+      nextStep: "inspect_stale_runtime",
+      commandHint: "runtime-stale 10",
+      ...(stale?.chainId ? { caseKey: stale.chainId } : {}),
+      ...(stale?.canonicalState ? { state: stale.canonicalState } : {}),
+    });
+  } else if (input.runtime.waitingCount > 0) {
+    const waiting = input.runtime.waitingChains[0];
+    focusAreas.push({
+      area: "runtime",
+      label: "runtime-waiting",
+      severity: "warning",
+      headline: `runtime waiting chains=${input.runtime.waitingCount}`,
+      reason:
+        waiting?.currentWaitingPoint ??
+        waiting?.waitingReason ??
+        waiting?.headline ??
+        "Runtime still has active waiting chains.",
+      nextStep: "inspect_waiting_runtime",
+      commandHint: "runtime-waiting 10",
+      ...(waiting?.chainId ? { caseKey: waiting.chainId } : {}),
+      ...(waiting?.canonicalState ? { state: waiting.canonicalState } : {}),
+    });
+  }
+
+  const promptPrimary = input.summary.prompt.latestBoundaries[0];
+  const hasPromptCase = input.attention.cases.some((entry) => entry.sources.includes("prompt"));
+  if (!hasPromptCase && (input.summary.prompt.reductionCount > 0 || input.summary.promptAttentionCount > 0)) {
+    focusAreas.push({
+      area: "prompt",
+      label: "prompt-pressure",
+      severity: input.summary.prompt.reductionCount > 0 ? "critical" : "warning",
+      headline: `prompt pressure boundaries=${input.summary.prompt.totalBoundaries}`,
+      reason:
+        promptPrimary?.summary ??
+        "Prompt pressure reduced or compacted the request envelope.",
+      nextStep: "inspect_prompt_boundary",
+      commandHint: "prompt-console 10",
+      ...(promptPrimary?.progressId ? { caseKey: `prompt:${promptPrimary.progressId}` } : {}),
+      ...(promptPrimary?.boundaryKind ? { state: promptPrimary.boundaryKind } : {}),
+    });
+  }
+
+  const orderedFocusAreas = focusAreas
+    .sort(compareOperatorTriageFocusAreas)
+    .slice(0, limit);
+
+  return {
+    totalAttentionCount: input.summary.totalAttentionCount,
+    uniqueCaseCount: input.attention.uniqueCaseCount,
+    blockedCaseCount: input.attention.caseStateCounts.blocked ?? 0,
+    waitingManualCaseCount: input.attention.caseStateCounts.waiting_manual ?? 0,
+    recoveringCaseCount: input.attention.caseStateCounts.recovering ?? 0,
+    runtimeWaitingCount: input.runtime.waitingCount,
+    runtimeStaleCount: input.runtime.staleCount,
+    runtimeFailedCount: input.runtime.failedCount,
+    promptReductionCount: input.summary.prompt.reductionCount,
+    promptAttentionCount: input.summary.promptAttentionCount,
+    ...(orderedFocusAreas[0]?.commandHint ? { recommendedEntryPoint: orderedFocusAreas[0].commandHint } : {}),
+    focusAreas: orderedFocusAreas,
+  };
+}
+
 function buildPromptAttentionItems(prompt: PromptConsoleReport): OperatorAttentionItem[] {
   return prompt.latestBoundaries
     .filter((boundary) => boundary.boundaryKind === "request_envelope_reduction" || shouldEscalatePromptCompaction(boundary))
@@ -854,6 +942,90 @@ function deriveAttentionNextStep(item: OperatorAttentionItem): string {
     case "open":
     default:
       return "inspect_case";
+  }
+}
+
+function mapAttentionCaseToTriageFocus(entry: OperatorAttentionCaseSummary): OperatorTriageFocusArea {
+  const primarySource = entry.sources[0] ?? "replay";
+  return {
+    area: "case",
+    label: primarySource,
+    severity: entry.severity,
+    headline: entry.headline,
+    reason: entry.latestUpdate,
+    nextStep: entry.nextStep,
+    commandHint: deriveTriageCommandHint(entry),
+    caseKey: entry.caseKey,
+    source: primarySource,
+    ...(entry.gate ? { gate: entry.gate } : {}),
+    ...(entry.caseState ? { state: entry.caseState } : {}),
+    ...(entry.browserContinuityState ? { browserContinuityState: entry.browserContinuityState } : {}),
+  };
+}
+
+function deriveTriageCommandHint(entry: OperatorAttentionCaseSummary): string {
+  if (entry.caseKey.startsWith("incident:")) {
+    return `replay-bundle ${entry.caseKey.slice("incident:".length)}`;
+  }
+  if (entry.sources.includes("recovery")) {
+    return "recovery-summary 10";
+  }
+  if (entry.sources.includes("flow")) {
+    return "flows-summary";
+  }
+  if (entry.sources.includes("governance")) {
+    return "governance workers 20";
+  }
+  if (entry.sources.includes("prompt")) {
+    return "prompt-console 10";
+  }
+  return "operator-attention 10";
+}
+
+function compareOperatorTriageFocusAreas(left: OperatorTriageFocusArea, right: OperatorTriageFocusArea): number {
+  const areaDelta = triageAreaRank(right.area) - triageAreaRank(left.area);
+  if (areaDelta !== 0) {
+    return areaDelta;
+  }
+  const sourceDelta = triageSourceRank(right.source) - triageSourceRank(left.source);
+  if (sourceDelta !== 0) {
+    return sourceDelta;
+  }
+  const severityDelta = severityRank(right.severity) - severityRank(left.severity);
+  if (severityDelta !== 0) {
+    return severityDelta;
+  }
+  const leftCase = left.caseKey ?? left.label;
+  const rightCase = right.caseKey ?? right.label;
+  return leftCase.localeCompare(rightCase);
+}
+
+function triageAreaRank(area: OperatorTriageFocusArea["area"]): number {
+  switch (area) {
+    case "case":
+      return 3;
+    case "runtime":
+      return 2;
+    case "prompt":
+    default:
+      return 1;
+  }
+}
+
+function triageSourceRank(source: OperatorTriageFocusArea["source"] | undefined): number {
+  switch (source) {
+    case "replay":
+      return 5;
+    case "recovery":
+      return 4;
+    case "flow":
+      return 3;
+    case "governance":
+      return 2;
+    case "prompt":
+      return 1;
+    default:
+      return 0;
   }
 }
 

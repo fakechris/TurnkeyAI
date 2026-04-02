@@ -7,6 +7,7 @@ import type {
   GovernanceConsoleReport,
   OperatorAttentionReport,
   OperatorSummaryReport,
+  OperatorTriageReport,
   PermissionCacheRecord,
   PromptConsoleReport,
   RuntimeChain,
@@ -372,6 +373,11 @@ while (true) {
       continue;
     }
 
+    if (command === "operator-triage") {
+      await handleOperatorTriageCommand(args);
+      continue;
+    }
+
     if (command === "prompt-console") {
       await handlePromptConsoleCommand(args);
       continue;
@@ -612,6 +618,7 @@ function printHelp(): void {
   console.log("  runtime-chain-progress <chainId> [limit] show recent runtime progress for one chain");
   console.log("  operator-summary     show current thread operator summary");
   console.log("  operator-attention [limit]           show cross-surface attention items for current thread");
+  console.log("  operator-triage [limit]              show prioritized triage entry points for current thread");
   console.log("  prompt-console [limit]               show recent prompt boundary diagnostics for current thread");
   console.log("  runs                 show current thread role runs");
   console.log("  session-memory       show current thread session memory");
@@ -1368,6 +1375,50 @@ function printOperatorAttention(report: OperatorAttentionReport): void {
   }
 }
 
+function printOperatorTriage(report: OperatorTriageReport): void {
+  console.log("Operator Triage");
+  console.log(`  total attention: ${report.totalAttentionCount}`);
+  console.log(`  unique cases: ${report.uniqueCaseCount}`);
+  console.log(
+    `  blocked=${report.blockedCaseCount}  waiting_manual=${report.waitingManualCaseCount}  recovering=${report.recoveringCaseCount}`
+  );
+  console.log(
+    `  runtime waiting=${report.runtimeWaitingCount}  stale=${report.runtimeStaleCount}  failed=${report.runtimeFailedCount}`
+  );
+  console.log(
+    `  prompt reductions=${report.promptReductionCount}  prompt attention=${report.promptAttentionCount}`
+  );
+  if (report.recommendedEntryPoint) {
+    console.log(`  recommended entry: ${report.recommendedEntryPoint}`);
+  }
+  if (report.focusAreas.length > 0) {
+    console.log("  focus areas:");
+    for (const area of report.focusAreas) {
+      const parts = [
+        area.label,
+        `area=${area.area}`,
+        `severity=${area.severity}`,
+      ];
+      if (area.state) {
+        parts.push(`state=${area.state}`);
+      }
+      if (area.source) {
+        parts.push(`source=${area.source}`);
+      }
+      if (area.gate) {
+        parts.push(`gate=${area.gate}`);
+      }
+      if (area.browserContinuityState) {
+        parts.push(`browser=${area.browserContinuityState}`);
+      }
+      console.log(`    - ${parts.join("  ")}`);
+      console.log(`      ${area.headline}`);
+      console.log(`      next=${area.nextStep}  cmd=${area.commandHint}`);
+      console.log(`      reason=${area.reason}`);
+    }
+  }
+}
+
 async function printInspect(threadId: string): Promise<void> {
   const [messages, flows, runs] = await Promise.all([
     getJson(`/messages?threadId=${encodeURIComponent(threadId)}`),
@@ -1719,6 +1770,23 @@ async function handleOperatorAttentionCommand(raw: string): Promise<void> {
   );
 }
 
+async function handleOperatorTriageCommand(raw: string): Promise<void> {
+  if (!currentThreadId) {
+    console.log("no active thread; run `bootstrap` or `use <threadId>` first");
+    return;
+  }
+  const params = new URLSearchParams({
+    threadId: currentThreadId,
+  });
+  const limit = Number(raw.trim() || "5");
+  if (Number.isFinite(limit) && limit > 0) {
+    params.set("limit", String(limit));
+  }
+  printOperatorTriage(
+    (await getJson(`/operator-triage?${params.toString()}`)) as OperatorTriageReport
+  );
+}
+
 async function handleReplayConsoleCommand(raw: string): Promise<void> {
   const params = new URLSearchParams();
   if (currentThreadId) {
@@ -1736,7 +1804,7 @@ async function handleRegressionCasesCommand(): Promise<void> {
     (await getJson("/regression-cases")) as Array<{
       caseId: string;
       title: string;
-      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
       summary: string;
     }>
   );
@@ -1752,7 +1820,7 @@ async function handleRegressionRunCommand(raw: string): Promise<void> {
       results: Array<{
         caseId: string;
         title: string;
-        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
         summary: string;
         status: "passed" | "failed";
         details: string[];
@@ -1767,7 +1835,7 @@ async function handleFailureCasesCommand(): Promise<void> {
       totalScenarios: number;
       scenarios: Array<{
         scenarioId: string;
-        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
         title: string;
         summary: string;
         caseIds: string[];
@@ -1788,7 +1856,7 @@ async function handleFailureRunCommand(raw: string): Promise<void> {
       failedCases: number;
       scenarios: Array<{
         scenarioId: string;
-        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
         title: string;
         summary: string;
         caseIds: string[];
@@ -1799,7 +1867,7 @@ async function handleFailureRunCommand(raw: string): Promise<void> {
         caseResults: Array<{
           caseId: string;
           title: string;
-          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
           summary: string;
           status: "passed" | "failed";
           details: string[];
@@ -1865,7 +1933,7 @@ async function handleSoakRunCommand(raw: string): Promise<void> {
         caseResults: Array<{
           caseId: string;
           title: string;
-          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
           summary: string;
           status: "passed" | "failed";
           details: string[];
@@ -1929,7 +1997,7 @@ async function handleAcceptanceRunCommand(raw: string): Promise<void> {
         caseResults: Array<{
           caseId: string;
           title: string;
-          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
           summary: string;
           status: "passed" | "failed";
           details: string[];
@@ -2000,7 +2068,7 @@ async function handleValidationRunCommand(raw: string): Promise<void> {
             caseResults: Array<{
               caseId: string;
               title: string;
-              area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+              area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
               summary: string;
               status: "passed" | "failed";
               details: string[];
@@ -2787,7 +2855,7 @@ function printRegressionCaseList(
   cases: Array<{
     caseId: string;
     title: string;
-    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
     summary: string;
   }>
 ): void {
@@ -2805,7 +2873,7 @@ function printRegressionRunResult(payload: {
   results: Array<{
     caseId: string;
     title: string;
-    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
     summary: string;
     status: "passed" | "failed";
     details: string[];
@@ -2827,7 +2895,7 @@ function printFailureInjectionScenarioList(payload: {
   totalScenarios: number;
   scenarios: Array<{
     scenarioId: string;
-    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
     title: string;
     summary: string;
     caseIds: string[];
@@ -2850,7 +2918,7 @@ function printFailureInjectionRunResult(payload: {
   failedCases: number;
   scenarios: Array<{
     scenarioId: string;
-    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
     title: string;
     summary: string;
     caseIds: string[];
@@ -2861,7 +2929,7 @@ function printFailureInjectionRunResult(payload: {
     caseResults: Array<{
       caseId: string;
       title: string;
-      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
       summary: string;
       status: "passed" | "failed";
       details: string[];
@@ -2944,7 +3012,7 @@ function printSoakRunResult(payload: {
     caseResults: Array<{
       caseId: string;
       title: string;
-      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
       summary: string;
       status: "passed" | "failed";
       details: string[];
@@ -3025,7 +3093,7 @@ function printAcceptanceRunResult(payload: {
     caseResults: Array<{
       caseId: string;
       title: string;
-      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
       summary: string;
       status: "passed" | "failed";
       details: string[];
@@ -3118,7 +3186,7 @@ function printValidationRunResult(payload: {
       caseResults: Array<{
         caseId: string;
         title: string;
-        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime";
+        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
         summary: string;
         status: "passed" | "failed";
         details: string[];

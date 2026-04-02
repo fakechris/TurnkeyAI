@@ -10,6 +10,7 @@ test("bounded regression harness lists built-in cases", () => {
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-keeps-browser-recovered-chain-active"));
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-preserves-reconnect-window-before-stale"));
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-aligns-browser-recovered-manual-follow-up"));
+  assert.ok(cases.some((item) => item.caseId === "operator-triage-prioritizes-compound-incident"));
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-surfaces-stale-waiting-point-and-child-span"));
   assert.ok(cases.some((item) => item.caseId === "runtime-summary-prioritizes-attention-chains"));
   assert.ok(cases.some((item) => item.caseId === "runtime-child-session-progress-visible"));
@@ -115,6 +116,7 @@ test("bounded regression harness can run runtime validation cases", () => {
     "runtime-summary-keeps-browser-recovered-chain-active",
     "runtime-summary-preserves-reconnect-window-before-stale",
     "runtime-summary-aligns-browser-recovered-manual-follow-up",
+    "operator-triage-prioritizes-compound-incident",
     "runtime-summary-surfaces-stale-waiting-point-and-child-span",
     "runtime-summary-prioritizes-attention-chains",
     "runtime-child-session-progress-visible",
@@ -128,7 +130,7 @@ test("bounded regression harness can run runtime validation cases", () => {
     "context-evidence-heavy-keeps-pending-work",
     "context-reentry-preserves-active-tasks-and-open-questions",
   ]);
-  assert.equal(result.totalCases, 16);
+  assert.equal(result.totalCases, 17);
   assert.equal(result.failedCases, 0);
 });
 

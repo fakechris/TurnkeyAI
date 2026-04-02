@@ -1579,6 +1579,36 @@ export interface OperatorSummaryReport {
   };
 }
 
+export interface OperatorTriageFocusArea {
+  area: "case" | "runtime" | "prompt";
+  label: string;
+  severity: "warning" | "critical";
+  headline: string;
+  reason: string;
+  nextStep: string;
+  commandHint: string;
+  caseKey?: string;
+  source?: OperatorAttentionItem["source"];
+  state?: string;
+  gate?: string;
+  browserContinuityState?: ReplayBrowserContinuitySummary["state"];
+}
+
+export interface OperatorTriageReport {
+  totalAttentionCount: number;
+  uniqueCaseCount: number;
+  blockedCaseCount: number;
+  waitingManualCaseCount: number;
+  recoveringCaseCount: number;
+  runtimeWaitingCount: number;
+  runtimeStaleCount: number;
+  runtimeFailedCount: number;
+  promptReductionCount: number;
+  promptAttentionCount: number;
+  recommendedEntryPoint?: string;
+  focusAreas: OperatorTriageFocusArea[];
+}
+
 export interface OperatorAttentionItem {
   source: "flow" | "replay" | "governance" | "recovery" | "prompt";
   key: string;

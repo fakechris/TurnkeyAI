@@ -60,6 +60,7 @@ import {
   buildFlowConsoleReport,
   buildGovernanceConsoleReport,
   buildOperatorSummaryReport,
+  buildOperatorTriageReport,
   buildRecoveryConsoleReport,
 } from "@turnkeyai/qc-runtime/operator-inspection";
 import { buildPromptConsoleReport } from "@turnkeyai/qc-runtime/prompt-inspection";
@@ -840,6 +841,53 @@ const server = http.createServer(async (req, res) => {
           replays: synced.records,
           recoveryRuns: synced.runs,
           progressEvents,
+          limit,
+        })
+      );
+    }
+
+    if (req.method === "GET" && url.pathname === "/operator-triage") {
+      const threadId = url.searchParams.get("threadId");
+      if (!threadId) {
+        return sendJson(res, 400, { error: "threadId is required" });
+      }
+      const limit = parsePositiveLimit(url.searchParams.get("limit"));
+      if (limit == null) {
+        return sendJson(res, 400, { error: "limit must be a positive integer" });
+      }
+      const [flows, permissionRecords, events, synced, progressEvents, runtimeSummary] = await Promise.all([
+        flowLedgerStore.listByThread(threadId),
+        permissionCacheStore.listByThread(threadId),
+        teamEventBus.listRecent(threadId, Math.max(limit, 200)),
+        loadRecoveryRuntime(threadId),
+        runtimeProgressStore.listByThread(threadId),
+        loadRuntimeSummary(threadId, Math.max(limit, 10)),
+      ]);
+      const operatorSummary = buildOperatorSummaryReport({
+        flows,
+        permissionRecords,
+        events,
+        replays: synced.records,
+        recoveryRuns: synced.runs,
+        progressEvents,
+        limit,
+      });
+      const operatorAttention = buildOperatorAttentionReport({
+        flows,
+        permissionRecords,
+        events,
+        replays: synced.records,
+        recoveryRuns: synced.runs,
+        progressEvents,
+        limit: Math.max(limit, 10),
+      });
+      return sendJson(
+        res,
+        200,
+        buildOperatorTriageReport({
+          summary: operatorSummary,
+          attention: operatorAttention,
+          runtime: runtimeSummary,
           limit,
         })
       );

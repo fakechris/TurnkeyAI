@@ -26,6 +26,7 @@ import {
   buildOperatorAttentionReport,
   buildRecoveryConsoleReport,
   buildOperatorSummaryReport,
+  buildOperatorTriageReport,
 } from "./operator-inspection";
 import {
   buildAugmentedFlowRuntimeChainDetail,
@@ -361,6 +362,156 @@ const BUILT_IN_CASES: RegressionCase[] = [
         runtimeSummary.activeChains[0]?.continuityState === "waiting" &&
         operatorSummary.attentionOverview?.caseStateCounts.waiting_manual === 1 &&
         operatorSummary.recovery.browserOutcomeCounts.detached_target_recovered === 1;
+      return buildResult(this, passed, details);
+    },
+  },
+  {
+    caseId: "operator-triage-prioritizes-compound-incident",
+    title: "Operator triage prioritizes compound browser/runtime/prompt incident",
+    area: "runtime",
+    summary:
+      "Operator triage should put a recovered-browser manual follow-up incident ahead of raw runtime/prompt signals while still surfacing waiting and prompt entry points.",
+    run() {
+      const now = Date.now();
+      const recoveryRun: RecoveryRun = {
+        recoveryRunId: buildRecoveryRunId("task-operator-triage"),
+        threadId: "thread-1",
+        sourceGroupId: "task-operator-triage",
+        latestStatus: "partial",
+        status: "waiting_external",
+        nextAction: "inspect_then_resume",
+        autoDispatchReady: false,
+        requiresManualIntervention: true,
+        latestSummary: "Browser continuity recovered; waiting on operator verification.",
+        waitingReason: "waiting on operator verification",
+        browserSession: {
+          sessionId: "browser-operator-triage",
+          targetId: "target-operator-triage",
+          resumeMode: "warm",
+        },
+        attempts: [
+          {
+            attemptId: "attempt-operator-triage",
+            action: "resume",
+            requestedAt: now - 10,
+            updatedAt: now,
+            status: "waiting_external",
+            nextAction: "inspect_then_resume",
+            summary: "Detached target recovered; waiting on manual verification.",
+            browserOutcome: "detached_target_recovered",
+          },
+        ],
+        createdAt: now - 20,
+        updatedAt: now,
+      };
+      const progressEvents: RuntimeProgressEvent[] = [
+        {
+          progressId: "progress:operator-triage:reduction",
+          threadId: "thread-1",
+          chainId: "recovery:task-operator-triage",
+          spanId: "recovery:task-operator-triage",
+          subjectKind: "recovery_run",
+          subjectId: buildRecoveryRunId("task-operator-triage"),
+          phase: "waiting",
+          progressKind: "boundary",
+          summary: "Envelope reduction kept the browser verification blocker visible.",
+          recordedAt: now,
+          taskId: "task-operator-triage",
+          metadata: {
+            boundaryKind: "request_envelope_reduction",
+            modelId: "gpt-5",
+            modelChainId: "acceptance_chain",
+            assemblyFingerprint: "fp-operator-triage",
+            reductionLevel: "minimal",
+            compactedSegments: ["recent-turns", "worker-evidence"],
+            contextDiagnostics: {
+              continuity: {
+                hasThreadSummary: true,
+                hasSessionMemory: true,
+                hasRoleScratchpad: true,
+                hasContinuationContext: true,
+                carriesPendingWork: true,
+                carriesWaitingOn: true,
+                carriesOpenQuestions: true,
+                carriesDecisionOrConstraint: true,
+              },
+              recentTurns: {
+                availableCount: 8,
+                selectedCount: 5,
+                packedCount: 2,
+                salientEarlierCount: 1,
+                compacted: true,
+              },
+              retrievedMemory: {
+                availableCount: 4,
+                selectedCount: 2,
+                packedCount: 1,
+                compacted: true,
+                userPreferenceCount: 1,
+                threadMemoryCount: 1,
+                sessionMemoryCount: 1,
+                knowledgeNoteCount: 1,
+                journalNoteCount: 0,
+              },
+              workerEvidence: {
+                totalCount: 3,
+                admittedCount: 2,
+                selectedCount: 2,
+                packedCount: 1,
+                compacted: true,
+                promotableCount: 1,
+                observationalCount: 1,
+                fullCount: 1,
+                summaryOnlyCount: 1,
+                continuationRelevantCount: 1,
+              },
+            },
+          },
+        },
+      ];
+      const operatorSummary = buildOperatorSummaryReport({
+        flows: [],
+        permissionRecords: [],
+        events: [],
+        replays: [],
+        recoveryRuns: [recoveryRun],
+        progressEvents,
+        limit: 10,
+      });
+      const operatorAttention = buildOperatorAttentionReport({
+        flows: [],
+        permissionRecords: [],
+        events: [],
+        replays: [],
+        recoveryRuns: [recoveryRun],
+        progressEvents,
+        limit: 10,
+      });
+      const triage = buildOperatorTriageReport({
+        summary: operatorSummary,
+        attention: operatorAttention,
+        runtime: buildRuntimeSummaryReport({
+          entries: [buildDerivedRecoveryRuntimeChain(recoveryRun)],
+          limit: 10,
+          now,
+        }),
+        limit: 5,
+      });
+      const details = [
+        `entry=${triage.recommendedEntryPoint ?? "-"}`,
+        `focus0=${triage.focusAreas[0]?.commandHint ?? "-"}`,
+        `waiting=${triage.runtimeWaitingCount}`,
+        `prompt=${triage.promptReductionCount}`,
+        `manual=${triage.waitingManualCaseCount}`,
+      ];
+      const passed =
+        triage.waitingManualCaseCount === 1 &&
+        triage.runtimeWaitingCount === 1 &&
+        triage.promptReductionCount === 1 &&
+        triage.recommendedEntryPoint === "replay-bundle task-operator-triage" &&
+        triage.focusAreas[0]?.commandHint === "replay-bundle task-operator-triage" &&
+        triage.focusAreas.some((area) => area.commandHint === "runtime-waiting 10") &&
+        triage.focusAreas.some((area) => area.commandHint === "prompt-console 10");
       return buildResult(this, passed, details);
     },
   },

@@ -17,6 +17,7 @@ test("scenario parity acceptance suite lists scenario families", () => {
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "context-evidence-heavy-and-reentry"));
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "governance-success-fallback-approval"));
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "operator-cross-surface-consistency"));
+  assert.ok(scenarios.some((scenario) => scenario.scenarioId === "operator-triage-compound-incident"));
   assert.ok(scenarios.some((scenario) => scenario.scenarioId === "observability-live-chain-visibility"));
   assert.ok(
     scenarios

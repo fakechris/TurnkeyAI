@@ -1,16 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { FlowLedger, PermissionCacheRecord, ReplayRecord, RuntimeProgressEvent, TeamEvent } from "@turnkeyai/core-types/team";
+import type { FlowLedger, PermissionCacheRecord, RecoveryRun, ReplayRecord, RuntimeProgressEvent, TeamEvent } from "@turnkeyai/core-types/team";
 
 import {
   buildOperatorAttentionReport,
   buildFlowConsoleReport,
   buildGovernanceConsoleReport,
   buildOperatorSummaryReport,
+  buildOperatorTriageReport,
   buildRecoveryConsoleReport,
 } from "./operator-inspection";
 import { buildRecoveryRunId } from "./replay-inspection";
+import { buildDerivedRecoveryRuntimeChain, buildRuntimeSummaryReport } from "./runtime-chain-inspection";
 
 test("operator inspection summarizes flow shard issues", () => {
   const flows: FlowLedger[] = [
@@ -1006,6 +1008,90 @@ test("operator inspection counts cases from the full dataset before limiting ret
   assert.equal(report.caseStateCounts.waiting_manual, 12);
   assert.equal(report.severityCounts.critical, 13);
   assert.equal(report.severityCounts.warning, 12);
+});
+
+test("operator triage prioritizes compound incidents and surfaces runtime and prompt entry points", () => {
+  const now = 50;
+  const recoveryRun: RecoveryRun = {
+    recoveryRunId: buildRecoveryRunId("task-operator-triage"),
+    threadId: "thread-1",
+    sourceGroupId: "task-operator-triage",
+    latestStatus: "partial",
+    status: "waiting_external",
+    nextAction: "inspect_then_resume",
+    autoDispatchReady: false,
+    requiresManualIntervention: true,
+    latestSummary: "Browser continuity recovered; waiting on operator verification.",
+    waitingReason: "waiting on operator verification",
+    browserSession: {
+      sessionId: "browser-triage",
+      targetId: "target-triage",
+      resumeMode: "warm",
+    },
+    attempts: [
+      {
+        attemptId: "attempt-triage",
+        action: "resume",
+        requestedAt: now - 10,
+        updatedAt: now,
+        status: "waiting_external",
+        nextAction: "inspect_then_resume",
+        summary: "Detached target recovered; waiting on manual verification.",
+        browserOutcome: "detached_target_recovered",
+      },
+    ],
+    createdAt: now - 20,
+    updatedAt: now,
+  };
+  const progressEvents = [
+    buildPromptBoundary({
+      progressId: "progress-triage-reduction",
+      recordedAt: now,
+      boundaryKind: "request_envelope_reduction",
+      reductionLevel: "minimal",
+      taskId: "task-operator-triage",
+      summary: "Envelope reduction kept the browser verification blocker visible.",
+    }),
+  ];
+  const summary = buildOperatorSummaryReport({
+    flows: [],
+    permissionRecords: [],
+    events: [],
+    replays: [],
+    recoveryRuns: [recoveryRun],
+    progressEvents,
+    limit: 10,
+  });
+  const attention = buildOperatorAttentionReport({
+    flows: [],
+    permissionRecords: [],
+    events: [],
+    replays: [],
+    recoveryRuns: [recoveryRun],
+    progressEvents,
+    limit: 10,
+  });
+  const runtime = buildRuntimeSummaryReport({
+    entries: [buildDerivedRecoveryRuntimeChain(recoveryRun)],
+    limit: 10,
+    now,
+  });
+
+  const report = buildOperatorTriageReport({
+    summary,
+    attention,
+    runtime,
+    limit: 5,
+  });
+
+  assert.equal(report.waitingManualCaseCount, 1);
+  assert.equal(report.runtimeWaitingCount, 1);
+  assert.equal(report.promptReductionCount, 1);
+  assert.equal(report.recommendedEntryPoint, "replay-bundle task-operator-triage");
+  assert.equal(report.focusAreas[0]?.area, "case");
+  assert.equal(report.focusAreas[0]?.commandHint, "replay-bundle task-operator-triage");
+  assert.ok(report.focusAreas.some((area) => area.area === "runtime"));
+  assert.ok(report.focusAreas.some((area) => area.commandHint === "prompt-console 10"));
 });
 
 function buildPromptBoundary(input: {
