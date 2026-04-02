@@ -104,6 +104,11 @@ interface RecentTurnSelectionResult {
   salientEarlierCount: number;
 }
 
+interface TrimmedSectionResult {
+  text: string;
+  compacted: boolean;
+}
+
 const MAX_WORKER_EVIDENCE_PROMPT_ARTIFACTS = 8;
 const MAX_WORKER_EVIDENCE_REFERENCE_ARTIFACTS = 3;
 const MAX_TOTAL_PROMPT_ARTIFACTS = 12;
@@ -168,11 +173,11 @@ export class DefaultPromptAssembler implements PromptAssembler {
     if (input.recentTurns.length === 0) {
       omittedSegments.push({ segment: "recent-turns", reason: "empty" });
     } else {
-      const recentTurnsText = trimSectionText(
+      const recentTurnsSection = trimSection(
         buildRecentTurnsSection(recentTurnSelection.turns, input.recentTurns.length),
         input.budget.recentTurnsBudget
       );
-      const compactRecentTurnsText = trimSectionText(
+      const compactRecentTurnsSection = trimSection(
         buildRecentTurnsSection(compactRecentTurns, input.recentTurns.length, 120),
         Math.max(Math.floor(input.budget.recentTurnsBudget * 0.55), 1)
       );
@@ -180,12 +185,12 @@ export class DefaultPromptAssembler implements PromptAssembler {
         segment: "recent-turns",
         priority: 1,
         artifactIds: [],
-        keptCount: recentTurnSelection.turns.length,
-        compactKeptCount: compactRecentTurns.length,
-        text: recentTurnsText,
-        compactText: compactRecentTurnsText,
-        compacted: recentTurnsText.includes("[compacted]"),
-        compactCompacted: compactRecentTurnsText.includes("[compacted]"),
+        keptCount: countRenderedRecentTurns(recentTurnsSection.text),
+        compactKeptCount: countRenderedRecentTurns(compactRecentTurnsSection.text),
+        text: recentTurnsSection.text,
+        compactText: compactRecentTurnsSection.text,
+        compacted: recentTurnsSection.compacted,
+        compactCompacted: compactRecentTurnsSection.compacted,
       });
     }
 
@@ -508,16 +513,14 @@ function selectCompactRecentTurns(turns: TeamMessageSummary[]): TeamMessageSumma
       if (left.score !== right.score) {
         return right.score - left.score;
       }
-      return left.message.createdAt - right.message.createdAt;
+      return right.message.createdAt - left.message.createdAt;
     });
   const salientEarlier = earlierCandidates[0]?.message;
   if (!salientEarlier) {
     return tail;
   }
 
-  return [salientEarlier, ...tail]
-    .sort((left, right) => left.createdAt - right.createdAt)
-    .slice(-3);
+  return [salientEarlier, ...tail].sort((left, right) => left.createdAt - right.createdAt);
 }
 
 function pickSalientEarlierTurns(
@@ -826,8 +829,15 @@ function buildContextDiagnostics(input: {
 }
 
 function trimSectionText(text: string, maxTokens: number): string {
+  return trimSection(text, maxTokens).text;
+}
+
+function trimSection(text: string, maxTokens: number): TrimmedSectionResult {
   if (maxTokens <= 0) {
-    return "";
+    return {
+      text: "",
+      compacted: text.length > 0,
+    };
   }
 
   const lines = text.split("\n");
@@ -841,7 +851,10 @@ function trimSectionText(text: string, maxTokens: number): string {
   }
 
   if (kept.length === lines.length) {
-    return text;
+    return {
+      text,
+      compacted: false,
+    };
   }
 
   if (
@@ -862,7 +875,10 @@ function trimSectionText(text: string, maxTokens: number): string {
     }
   }
 
-  return [...kept, `[compacted] ${lines.length - kept.length} line(s) omitted for budget.`].join("\n");
+  return {
+    text: [...kept, `[compacted] ${lines.length - kept.length} line(s) omitted for budget.`].join("\n"),
+    compacted: true,
+  };
 }
 
 function buildBudgetedListSection(input: {
@@ -971,6 +987,13 @@ function findPreferredCompactedLineIndex(lines: string[], startIndex: number): n
 
 function isCompactionNoticeLine(line: string): boolean {
   return /^\[compacted\]\s+\d+\s+(earlier turn\(s\)|line\(s\)|item\(s\)) omitted/i.test(line);
+}
+
+function countRenderedRecentTurns(text: string): number {
+  return text
+    .split("\n")
+    .filter((line) => line.startsWith("[") && !isCompactionNoticeLine(line))
+    .length;
 }
 
 function findCompactableSectionIndex(
