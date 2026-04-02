@@ -471,6 +471,16 @@ while (true) {
       continue;
     }
 
+    if (command === "realworld-cases") {
+      await handleRealWorldCasesCommand();
+      continue;
+    }
+
+    if (command === "realworld-run") {
+      await handleRealWorldRunCommand(args);
+      continue;
+    }
+
     if (command === "validation-cases") {
       await handleValidationCasesCommand();
       continue;
@@ -649,6 +659,8 @@ function printHelp(): void {
   console.log("  soak-run [scenarioId ...]             run long-chain stability soak suite");
   console.log("  acceptance-cases                      list scenario parity acceptance suites");
   console.log("  acceptance-run [scenarioId ...]       run scenario parity acceptance harness");
+  console.log("  realworld-cases                       list real-world runbook scenarios");
+  console.log("  realworld-run [scenarioId ...]        run real-world runbook validation suite");
   console.log("  validation-cases                      list unified validation suites and items");
   console.log("  validation-run [suite[:item] ...]     run unified validation suites or individual items");
   console.log("  replay-incidents [limit] [action]     show replay incidents for current thread");
@@ -2007,18 +2019,66 @@ async function handleAcceptanceRunCommand(raw: string): Promise<void> {
   );
 }
 
+async function handleRealWorldCasesCommand(): Promise<void> {
+  printRealWorldScenarioList(
+    (await getJson("/realworld-cases")) as {
+      totalScenarios: number;
+      scenarios: Array<{
+        scenarioId: string;
+        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
+        title: string;
+        summary: string;
+        caseIds: string[];
+      }>;
+    }
+  );
+}
+
+async function handleRealWorldRunCommand(raw: string): Promise<void> {
+  const scenarioIds = raw.split(/\s+/).filter(Boolean);
+  printRealWorldRunResult(
+    (await postJson("/realworld-cases/run", scenarioIds.length > 0 ? { scenarioIds } : {})) as {
+      totalScenarios: number;
+      passedScenarios: number;
+      failedScenarios: number;
+      totalCases: number;
+      passedCases: number;
+      failedCases: number;
+      scenarios: Array<{
+        scenarioId: string;
+        area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
+        title: string;
+        summary: string;
+        caseIds: string[];
+        status: "passed" | "failed";
+        totalCases: number;
+        passedCases: number;
+        failedCases: number;
+        caseResults: Array<{
+          caseId: string;
+          title: string;
+          area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
+          summary: string;
+          status: "passed" | "failed";
+          details: string[];
+        }>;
+      }>;
+    }
+  );
+}
+
 async function handleValidationCasesCommand(): Promise<void> {
   printValidationSuiteList(
     (await getJson("/validation-cases")) as {
       totalSuites: number;
       totalItems: number;
       suites: Array<{
-        suiteId: "regression" | "soak" | "failure" | "acceptance";
+        suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
         title: string;
         summary: string;
         totalItems: number;
         items: Array<{
-          suiteId: "regression" | "soak" | "failure" | "acceptance";
+          suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
           itemId: string;
           area: string;
           title: string;
@@ -2046,7 +2106,7 @@ async function handleValidationRunCommand(raw: string): Promise<void> {
         passedCases: number;
         failedCases: number;
         suites: Array<{
-          suiteId: "regression" | "soak" | "failure" | "acceptance";
+          suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
           title: string;
           summary: string;
           totalItems: number;
@@ -2056,7 +2116,7 @@ async function handleValidationRunCommand(raw: string): Promise<void> {
           passedCases: number;
           failedCases: number;
           items: Array<{
-            suiteId: "regression" | "soak" | "failure" | "acceptance";
+            suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
             itemId: string;
             area: string;
             title: string;
@@ -3120,16 +3180,81 @@ function printAcceptanceRunResult(payload: {
   }
 }
 
+function printRealWorldScenarioList(payload: {
+  totalScenarios: number;
+  scenarios: Array<{
+    scenarioId: string;
+    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
+    title: string;
+    summary: string;
+    caseIds: string[];
+  }>;
+}): void {
+  console.log(`Real-World Scenarios: ${payload.totalScenarios}`);
+  for (const scenario of payload.scenarios) {
+    console.log(`- ${scenario.scenarioId}  [${scenario.area}] ${scenario.title}`);
+    console.log(`  ${scenario.summary}`);
+    console.log(`  cases: ${scenario.caseIds.join(", ")}`);
+  }
+}
+
+function printRealWorldRunResult(payload: {
+  totalScenarios: number;
+  passedScenarios: number;
+  failedScenarios: number;
+  totalCases: number;
+  passedCases: number;
+  failedCases: number;
+  scenarios: Array<{
+    scenarioId: string;
+    area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
+    title: string;
+    summary: string;
+    caseIds: string[];
+    status: "passed" | "failed";
+    totalCases: number;
+    passedCases: number;
+    failedCases: number;
+    caseResults: Array<{
+      caseId: string;
+      title: string;
+      area: "browser" | "recovery" | "context" | "parallel" | "governance" | "runtime" | "operator";
+      summary: string;
+      status: "passed" | "failed";
+      details: string[];
+    }>;
+  }>;
+}): void {
+  console.log(
+    `Real-World: ${payload.passedScenarios}/${payload.totalScenarios} scenarios passed, ${payload.passedCases}/${payload.totalCases} cases passed`
+  );
+  for (const scenario of payload.scenarios) {
+    console.log(
+      `- ${scenario.scenarioId}  [${scenario.area}] ${scenario.title}  status=${scenario.status}  cases=${scenario.passedCases}/${scenario.totalCases}`
+    );
+    console.log(`  ${scenario.summary}`);
+    if (scenario.failedCases > 0) {
+      console.log(`  failed cases: ${scenario.failedCases}`);
+    }
+    for (const result of scenario.caseResults) {
+      console.log(`    - ${result.caseId}  status=${result.status}`);
+      for (const detail of result.details) {
+        console.log(`      ${detail}`);
+      }
+    }
+  }
+}
+
 function printValidationSuiteList(payload: {
   totalSuites: number;
   totalItems: number;
   suites: Array<{
-    suiteId: "regression" | "soak" | "failure" | "acceptance";
+    suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
     title: string;
     summary: string;
     totalItems: number;
     items: Array<{
-      suiteId: "regression" | "soak" | "failure" | "acceptance";
+      suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
       itemId: string;
       area: string;
       title: string;
@@ -3164,7 +3289,7 @@ function printValidationRunResult(payload: {
   passedCases: number;
   failedCases: number;
   suites: Array<{
-    suiteId: "regression" | "soak" | "failure" | "acceptance";
+    suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
     title: string;
     summary: string;
     totalItems: number;
@@ -3174,7 +3299,7 @@ function printValidationRunResult(payload: {
     passedCases: number;
     failedCases: number;
     items: Array<{
-      suiteId: "regression" | "soak" | "failure" | "acceptance";
+      suiteId: "regression" | "soak" | "failure" | "acceptance" | "realworld";
       itemId: string;
       area: string;
       title: string;

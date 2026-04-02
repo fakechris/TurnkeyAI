@@ -142,6 +142,49 @@ const SCENARIOS: ScenarioParityAcceptanceScenarioDescriptor[] = [
     ],
   },
   {
+    scenarioId: "real-world-browser-research-runbook",
+    area: "operator",
+    title: "real-world browser research runbook",
+    summary:
+      "验证真实浏览器研究任务在 recovery、prompt pressure、runtime waiting 和 triage 首页之间形成同场景的 operator runbook。",
+    caseIds: [
+      "browser-recovery-multi-attempt-chain-stays-aligned",
+      "browser-recovery-recovered-but-waiting-manual-stays-visible",
+      "context-runtime-pressure-keeps-carry-forward-and-waiting-visible",
+      "operator-triage-prioritizes-compound-incident",
+      "runtime-chain-query-answers-root-active-and-waiting-point",
+    ],
+  },
+  {
+    scenarioId: "real-world-governed-publish-runbook",
+    area: "governance",
+    title: "real-world governed publish runbook",
+    summary:
+      "验证真实发布任务从 official API 决策、approval gate、browser fallback 到 recovery closure 的同场景 operator 语义。",
+    caseIds: [
+      "governance-summary-highlights-browser-fallback",
+      "governance-approval-required-side-effect-blocks",
+      "replay-bundle-exposes-recovery-operator-gate",
+      "recovery-approval-fallback-chain",
+      "recovery-bundle-closes-after-approved-fallback",
+      "operator-summary-aligns-attention-across-surfaces",
+    ],
+  },
+  {
+    scenarioId: "real-world-parallel-follow-up-runbook",
+    area: "parallel",
+    title: "real-world parallel follow-up runbook",
+    summary:
+      "验证真实多 shard 任务在冲突、follow-up、retry 和最终 closure 下的 operator-facing merge 语义。",
+    caseIds: [
+      "parallel-flow-summary-highlights-shard-issues",
+      "parallel-follow-up-summary-stays-open",
+      "parallel-flow-summary-clears-attention-after-retry",
+      "parallel-follow-up-summary-closes-after-recovery",
+      "operator-summary-aligns-attention-across-surfaces",
+    ],
+  },
+  {
     scenarioId: "observability-live-chain-visibility",
     area: "observability",
     title: "整链活态可见与单查定位",

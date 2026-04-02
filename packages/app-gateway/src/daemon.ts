@@ -94,6 +94,10 @@ import {
   runSoakSuite,
 } from "@turnkeyai/qc-runtime/soak-suite";
 import {
+  listRealWorldScenarios,
+  runRealWorldSuite,
+} from "@turnkeyai/qc-runtime/real-world-suite";
+import {
   listScenarioParityAcceptanceScenarios,
   runScenarioParityAcceptanceSuite,
 } from "@turnkeyai/qc-runtime/scenario-parity-acceptance";
@@ -1069,6 +1073,32 @@ const server = http.createServer(async (req, res) => {
         }
       }
       return sendJson(res, 200, runScenarioParityAcceptanceSuite(scenarioIds));
+    }
+
+    if (req.method === "GET" && url.pathname === "/realworld-cases") {
+      const scenarios = listRealWorldScenarios();
+      return sendJson(res, 200, {
+        totalScenarios: scenarios.length,
+        scenarios,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/realworld-cases/run") {
+      const body = await readJsonBody<{ scenarioIds?: string[] }>(req);
+      const scenarioIds = Array.isArray(body.scenarioIds)
+        ? body.scenarioIds.filter((value): value is string => typeof value === "string" && value.length > 0)
+        : undefined;
+      if (scenarioIds && scenarioIds.length > 0) {
+        const validScenarioIds = new Set(listRealWorldScenarios().map((scenario) => scenario.scenarioId));
+        const invalidScenarioIds = scenarioIds.filter((scenarioId) => !validScenarioIds.has(scenarioId));
+        if (invalidScenarioIds.length > 0) {
+          return sendJson(res, 400, {
+            error: "unknown scenario ids",
+            invalidScenarioIds,
+          });
+        }
+      }
+      return sendJson(res, 200, runRealWorldSuite(scenarioIds));
     }
 
     if (req.method === "GET" && url.pathname === "/validation-cases") {

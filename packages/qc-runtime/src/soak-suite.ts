@@ -99,6 +99,35 @@ const SCENARIOS: SoakScenarioDescriptor[] = [
       "runtime-chain-query-answers-root-active-and-waiting-point",
     ],
   },
+  {
+    scenarioId: "operator-compound-incident-runbook",
+    area: "operator",
+    title: "Compound incident runbook",
+    summary:
+      "验证 browser recovery、manual follow-up、runtime waiting 和 prompt pressure 会在 operator triage / replay / runtime 三面形成稳定排障路径。",
+    caseIds: [
+      "browser-recovery-recovered-but-waiting-manual-stays-visible",
+      "runtime-summary-aligns-browser-recovered-manual-follow-up",
+      "context-runtime-pressure-keeps-carry-forward-and-waiting-visible",
+      "operator-triage-prioritizes-compound-incident",
+      "replay-console-surfaces-workflow-state",
+    ],
+  },
+  {
+    scenarioId: "governance-approval-fallback-closure",
+    area: "governance",
+    title: "Governance approval -> fallback -> closure",
+    summary:
+      "验证 approval-required side effect 在 browser fallback、approved recovery 与 bundle closure 后的 operator 收口保持一致。",
+    caseIds: [
+      "governance-summary-highlights-browser-fallback",
+      "governance-approval-required-side-effect-blocks",
+      "replay-bundle-exposes-recovery-operator-gate",
+      "recovery-approval-fallback-chain",
+      "recovery-bundle-closes-after-approved-fallback",
+      "operator-summary-aligns-attention-across-surfaces",
+    ],
+  },
 ];
 
 export function listSoakScenarios(): SoakScenarioDescriptor[] {

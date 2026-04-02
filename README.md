@@ -55,6 +55,7 @@
 - context runtime tuning：approval / merge / continuation 的语义 recall 与 salience compaction
 - context/runtime acceptance 已覆盖高压 compaction 下的 carry-forward、waiting-point 与 prompt-console 对齐
 - failure/acceptance 现已覆盖 compound incident triage：browser manual follow-up、runtime waiting、prompt pressure 同页收敛
+- real-world runbook suite 第一版已接入，覆盖 browser research、governed publish、parallel follow-up、runtime observability 等真实任务组合样本
 
 还没有具备：
 
@@ -163,6 +164,7 @@ npx @turnkeyai/cli tui
 - scenario parity acceptance harness
 - failure injection harness
 - unified validation catalog: `validation-cases` / `validation-run [suite[:item] ...]`
+- real-world runbook harness: `realworld-cases` / `realworld-run [scenarioId ...]`
 
 对应命令包括：
 
