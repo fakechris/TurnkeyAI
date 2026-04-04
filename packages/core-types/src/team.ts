@@ -1568,8 +1568,8 @@ export interface PromptConsoleReport {
   latestBoundaries: PromptBoundaryEntry[];
 }
 
-export type ValidationOpsRunType = "release-readiness" | "validation-profile" | "soak-series";
-export type ValidationOpsIssueKind = "validation-item" | "release-check" | "soak-suite";
+export type ValidationOpsRunType = "release-readiness" | "validation-profile" | "soak-series" | "transport-soak";
+export type ValidationOpsIssueKind = "validation-item" | "release-check" | "soak-suite" | "transport-target";
 export type ValidationOpsIssueSeverity = "warning" | "critical";
 export type ValidationOpsFailureBucket =
   | "browser"
@@ -1581,8 +1581,14 @@ export type ValidationOpsFailureBucket =
   | "operator"
   | "release"
   | "soak"
+  | "transport"
   | "validation";
-export type ValidationOpsRecommendedAction = "inspect" | "rerun-release" | "rerun-profile" | "rerun-soak";
+export type ValidationOpsRecommendedAction =
+  | "inspect"
+  | "rerun-release"
+  | "rerun-profile"
+  | "rerun-soak"
+  | "rerun-transport-soak";
 
 export interface ValidationOpsIssueRecord {
   issueId: string;
@@ -1607,6 +1613,8 @@ export interface ValidationOpsRunRecord {
   profileId?: string;
   selectors?: string[];
   cycles?: number;
+  targets?: string[];
+  artifactPath?: string;
   issues: ValidationOpsIssueRecord[];
 }
 

@@ -8,6 +8,7 @@ import type {
 } from "@turnkeyai/core-types/team";
 
 import type { ReleaseReadinessResult } from "./release-readiness";
+import type { BrowserTransportSoakResult } from "./browser-transport-soak";
 import type { ValidationProfileIssue, ValidationProfileRunResult } from "./validation-profile";
 import type { ValidationSoakSeriesResult } from "./validation-soak-series";
 
@@ -106,6 +107,44 @@ export function buildValidationOpsRecordFromSoakSeries(input: {
   };
 }
 
+export function buildValidationOpsRecordFromTransportSoak(input: {
+  runId: string;
+  startedAt: number;
+  completedAt: number;
+  artifactPath?: string;
+  result: BrowserTransportSoakResult;
+}): ValidationOpsRunRecord {
+  const issues = input.result.targetAggregates
+    .filter((aggregate) => aggregate.failedCycles > 0)
+    .map((aggregate) => {
+      const topFailureBucket = [...aggregate.failureBuckets]
+        .sort((left, right) => right.count - left.count || left.bucket.localeCompare(right.bucket))[0];
+      const bucketSummary = topFailureBucket ? `${topFailureBucket.bucket} x${topFailureBucket.count}` : "unknown";
+      return buildValidationOpsIssue({
+        issueId: `${input.runId}:${aggregate.target}`,
+        kind: "transport-target",
+        scope: aggregate.target,
+        summary: `${aggregate.target} transport soak failed ${aggregate.failedCycles}/${aggregate.cycles} cycles (${bucketSummary})`,
+        commandHint: `transport-soak ${input.result.totalCycles} ${aggregate.target}`.trim(),
+      });
+    });
+
+  return {
+    runId: input.runId,
+    runType: "transport-soak",
+    title: "Browser transport soak",
+    status: input.result.status,
+    startedAt: input.startedAt,
+    completedAt: input.completedAt,
+    durationMs: input.completedAt - input.startedAt,
+    issueCount: issues.length,
+    targets: [...input.result.targets],
+    cycles: input.result.totalCycles,
+    ...(input.artifactPath ? { artifactPath: input.artifactPath } : {}),
+    issues,
+  };
+}
+
 export function buildValidationOpsReport(records: ValidationOpsRunRecord[], limit = 10): ValidationOpsReport {
   const latestRuns = [...records]
     .sort((left, right) => right.completedAt - left.completedAt)
@@ -152,7 +191,7 @@ export function buildValidationOpsReport(records: ValidationOpsRunRecord[], limi
 
 function buildValidationOpsIssue(input: {
   issueId: string;
-  kind: ValidationProfileIssue["kind"] | "release-check" | "soak-suite";
+  kind: ValidationProfileIssue["kind"] | "release-check" | "soak-suite" | "transport-target";
   scope: string;
   summary: string;
   commandHint: string;
@@ -183,6 +222,9 @@ function deriveValidationOpsBucket(
   if (kind === "soak-suite") {
     return "soak";
   }
+  if (kind === "transport-target") {
+    return "transport";
+  }
 
   const suiteId = scope.split(":")[0];
   switch (suiteId) {
@@ -209,6 +251,9 @@ function deriveValidationIssueSeverity(
   if (kind === "soak-suite") {
     return bucket === "soak" ? "warning" : "critical";
   }
+  if (kind === "transport-target") {
+    return "critical";
+  }
   return bucket === "operator" || bucket === "browser" ? "critical" : "warning";
 }
 
@@ -218,6 +263,8 @@ function deriveValidationRecommendedAction(kind: ValidationOpsIssueRecord["kind"
       return "rerun-release";
     case "soak-suite":
       return "rerun-soak";
+    case "transport-target":
+      return "rerun-transport-soak";
     case "validation-item":
     default:
       return "rerun-profile";

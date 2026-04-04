@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildValidationOpsRecordFromTransportSoak,
   buildValidationOpsRecordFromReleaseReadiness,
   buildValidationOpsRecordFromSoakSeries,
   buildValidationOpsRecordFromValidationProfile,
@@ -90,19 +91,60 @@ test("validation ops inspection derives operator-facing records and report count
     },
   });
 
-  const report = buildValidationOpsReport([releaseRecord, profileRecord, soakRecord], 10);
+  const transportRecord = buildValidationOpsRecordFromTransportSoak({
+    runId: "transport-1",
+    startedAt: 120,
+    completedAt: 180,
+    artifactPath: ".daemon-data/validation-artifacts/transport-soak/transport-1.json",
+    result: {
+      status: "failed",
+      totalCycles: 3,
+      passedCycles: 2,
+      failedCycles: 1,
+      totalTargetRuns: 6,
+      failedTargetRuns: 1,
+      durationMs: 60,
+      targets: ["relay", "direct-cdp"],
+      cycleResults: [],
+      targetAggregates: [
+        {
+          target: "relay",
+          cycles: 3,
+          passedCycles: 2,
+          failedCycles: 1,
+          failureBuckets: [
+            { bucket: "reconnect-failure", count: 1 },
+            { bucket: "none", count: 2 },
+          ],
+        },
+        {
+          target: "direct-cdp",
+          cycles: 3,
+          passedCycles: 3,
+          failedCycles: 0,
+          failureBuckets: [{ bucket: "none", count: 3 }],
+        },
+      ],
+    },
+  });
 
-  assert.equal(report.totalRuns, 3);
-  assert.equal(report.failedRuns, 3);
-  assert.equal(report.attentionCount, 3);
+  const report = buildValidationOpsReport([releaseRecord, profileRecord, soakRecord, transportRecord], 10);
+
+  assert.equal(report.totalRuns, 4);
+  assert.equal(report.failedRuns, 4);
+  assert.equal(report.attentionCount, 4);
   assert.equal(report.runTypeCounts["release-readiness"], 1);
   assert.equal(report.runTypeCounts["validation-profile"], 1);
   assert.equal(report.runTypeCounts["soak-series"], 1);
+  assert.equal(report.runTypeCounts["transport-soak"], 1);
   assert.equal(report.bucketCounts.release, 1);
   assert.equal(report.bucketCounts.browser, 1);
   assert.equal(report.bucketCounts.soak, 1);
-  assert.equal(report.severityCounts.critical, 2);
+  assert.equal(report.bucketCounts.transport, 1);
+  assert.equal(report.severityCounts.critical, 3);
   assert.equal(report.recommendedActionCounts["rerun-release"], 1);
-  assert.equal(report.activeIssues[0]?.kind, "validation-item");
-  assert.equal(report.activeIssues[0]?.commandHint, "validation-profile-run nightly");
+  assert.equal(report.recommendedActionCounts["rerun-transport-soak"], 1);
+  assert.ok(report.activeIssues.some((issue) => issue.kind === "validation-item" && issue.commandHint === "validation-profile-run nightly"));
+  assert.ok(report.activeIssues.some((issue) => issue.kind === "transport-target" && issue.commandHint === "transport-soak 3 relay"));
+  assert.equal(report.latestRuns[0]?.artifactPath, ".daemon-data/validation-artifacts/transport-soak/transport-1.json");
 });
