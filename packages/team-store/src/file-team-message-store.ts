@@ -2,8 +2,8 @@ import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 
 import type { MessageId, TeamMessage, TeamMessageStore, ThreadId } from "@turnkeyai/core-types/team";
-import { KeyedAsyncMutex } from "@turnkeyai/core-types/async-mutex";
-import { readJsonFile, writeJsonFileAtomic } from "@turnkeyai/core-types/file-store-utils";
+import { KeyedAsyncMutex } from "@turnkeyai/shared-utils/async-mutex";
+import { readJsonFile, writeJsonFileAtomic } from "@turnkeyai/shared-utils/file-store-utils";
 
 interface FileTeamMessageStoreOptions {
   rootDir: string;

@@ -43,7 +43,7 @@ import {
   getScheduledTargetRoleId,
   getScheduledTargetWorker,
 } from "@turnkeyai/core-types/team";
-import { KeyedAsyncMutex } from "@turnkeyai/core-types/async-mutex";
+import { KeyedAsyncMutex } from "@turnkeyai/shared-utils/async-mutex";
 import { decodeBrowserSessionPayload } from "@turnkeyai/core-types/browser-session-payload";
 import { detectConflictRoleIds, detectDuplicateRoleIds } from "@turnkeyai/core-types/shard-result-analysis";
 import type { ContextStateMaintainer } from "./context-state-maintainer";

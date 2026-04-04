@@ -1,7 +1,7 @@
 import path from "node:path";
 
-import { KeyedAsyncMutex } from "@turnkeyai/core-types/async-mutex";
-import { readJsonFile, writeJsonFileAtomic } from "@turnkeyai/core-types/file-store-utils";
+import { KeyedAsyncMutex } from "@turnkeyai/shared-utils/async-mutex";
+import { readJsonFile, writeJsonFileAtomic } from "@turnkeyai/shared-utils/file-store-utils";
 import type { RuntimeChainEvent, RuntimeChainEventStore } from "@turnkeyai/core-types/team";
 
 interface FileRuntimeChainEventStoreOptions {
