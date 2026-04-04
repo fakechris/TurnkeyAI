@@ -13,6 +13,7 @@ let timeoutMs = 20_000;
 let skipBuild = false;
 let keepOpen = false;
 let requireTarget = true;
+let requireBrowserAction = true;
 let daemonPort: number | null = null;
 
 for (let index = 0; index < args.length; index += 1) {
@@ -89,6 +90,11 @@ for (let index = 0; index < args.length; index += 1) {
   }
   if (arg === "--no-require-target") {
     requireTarget = false;
+    requireBrowserAction = false;
+    continue;
+  }
+  if (arg === "--no-browser-action") {
+    requireBrowserAction = false;
   }
 }
 
@@ -148,12 +154,23 @@ async function main(): Promise<void> {
       timeoutMs,
       requireTarget,
     });
+    const browserSmoke =
+      requireBrowserAction
+        ? await runBrowserSessionSmoke({
+            daemonUrl: resolvedDaemonUrl,
+            startUrl,
+          })
+        : null;
 
     console.log("relay smoke passed");
     console.log(`daemon: ${resolvedDaemonUrl}`);
     console.log(`peer: ${peerState.peerId}`);
     if (peerState.targets !== null) {
       console.log(`targets: ${peerState.targets}`);
+    }
+    if (browserSmoke) {
+      console.log(`browser-session: ${browserSmoke.sessionId}`);
+      console.log(`browser-final-url: ${browserSmoke.finalUrl}`);
     }
     console.log(`profile: ${resolvedProfileDir}`);
     console.log(`url: ${startUrl}`);
@@ -293,8 +310,64 @@ async function waitForRelayPeer(input: {
   throw new Error(`timed out waiting for relay peer | last error: ${lastError ?? "unknown"}`);
 }
 
+async function runBrowserSessionSmoke(input: {
+  daemonUrl: string;
+  startUrl: string;
+}): Promise<{ sessionId: string; finalUrl: string }> {
+  const thread = (await postJson(`${input.daemonUrl}/threads/bootstrap-demo`, {
+    variant: "default",
+  })) as {
+    threadId?: unknown;
+  };
+  const threadId = typeof thread.threadId === "string" ? thread.threadId : "";
+  if (!threadId) {
+    throw new Error("browser session smoke did not return a threadId");
+  }
+
+  const response = (await postJson(`${input.daemonUrl}/browser-sessions/spawn`, {
+    threadId,
+    url: input.startUrl,
+    instructions: `Open ${input.startUrl} and capture a relay smoke snapshot`,
+  })) as {
+    sessionId?: unknown;
+    page?: {
+      finalUrl?: unknown;
+    };
+  };
+
+  const sessionId = typeof response.sessionId === "string" ? response.sessionId : "";
+  const finalUrl = typeof response.page?.finalUrl === "string" ? response.page.finalUrl : "";
+  if (!sessionId) {
+    throw new Error("browser session smoke did not return a sessionId");
+  }
+  if (!finalUrl) {
+    throw new Error("browser session smoke did not return a final page URL");
+  }
+  if (finalUrl === input.startUrl || finalUrl.startsWith(input.startUrl)) {
+    return { sessionId, finalUrl };
+  }
+
+  throw new Error(`browser session smoke returned unexpected final URL: ${finalUrl}`);
+}
+
 async function getJson(url: string): Promise<unknown> {
   const response = await fetch(url);
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : {};
+  if (!response.ok) {
+    throw new Error((json as { error?: string }).error ?? `${response.status} ${response.statusText}`);
+  }
+  return json;
+}
+
+async function postJson(url: string, body: unknown): Promise<unknown> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
   const text = await response.text();
   const json = text ? JSON.parse(text) : {};
   if (!response.ok) {

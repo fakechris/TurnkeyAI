@@ -63,6 +63,30 @@ test("chrome content script returns a failed response when the target element ca
   assert.match(response.errorMessage ?? "", /could not resolve target element/);
 });
 
+test("chrome content script accepts array-like DOM collections returned by querySelectorAll", async () => {
+  const button = createElement("button", "Approve");
+  const response = await executeChromeRelayContentScriptActions(
+    {
+      window: { location: { href: "https://example.com" } },
+      document: {
+        title: "ArrayLike",
+        querySelectorAll() {
+          return {
+            0: button,
+            length: 1,
+            [Symbol.iterator]: Array.prototype[Symbol.iterator],
+          };
+        },
+      },
+    },
+    [{ kind: "snapshot", note: "array-like" }]
+  );
+
+  assert.equal(response.ok, true);
+  assert.equal(response.page?.interactives.length, 1);
+  assert.equal(response.page?.interactives[0]?.label, "Approve");
+});
+
 function createDocument(elements: ReturnType<typeof createElement>[], title: string) {
   return {
     title,

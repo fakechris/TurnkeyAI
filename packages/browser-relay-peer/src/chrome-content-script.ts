@@ -7,6 +7,8 @@ import {
   type RelayContentScriptExecuteResponse,
 } from "./chrome-content-script-protocol";
 
+type DocumentLikeCollection = DocumentLikeElement[] | ArrayLike<DocumentLikeElement>;
+
 interface DocumentLikeElement {
   tagName?: string;
   innerText?: string;
@@ -18,12 +20,12 @@ interface DocumentLikeElement {
   click?(): void;
   focus?(): void;
   dispatchEvent?(event: unknown): void;
-  querySelectorAll?(selector: string): DocumentLikeElement[];
+  querySelectorAll?(selector: string): DocumentLikeCollection;
 }
 
 interface DocumentLike {
   title?: string;
-  querySelectorAll?(selector: string): DocumentLikeElement[];
+  querySelectorAll?(selector: string): DocumentLikeCollection;
 }
 
 interface WindowLike {
@@ -247,7 +249,9 @@ export async function executeChromeRelayContentScriptActions(
 }
 
 function captureSnapshot(environment: ChromeRelayContentScriptEnvironment): BrowserSnapshotResult {
-  const elements = environment.document.querySelectorAll?.("a,button,input,textarea,select,[role='button'],[contenteditable='true']") ?? [];
+  const elements = toElementArray(
+    environment.document.querySelectorAll?.("a,button,input,textarea,select,[role='button'],[contenteditable='true']")
+  );
   let refCounter = 0;
   const interactives = elements.slice(0, 50).map((element) => {
     const existingRef = element.dataset?.turnkeyaiRef;
@@ -287,23 +291,23 @@ function executeConsoleProbe(
     return {
       title: environment.document.title ?? "",
       href: environment.window.location?.href ?? "",
-      interactiveCount:
+      interactiveCount: toElementArray(
         environment.document.querySelectorAll?.(
           "a,button,input,textarea,select,[role='button'],[contenteditable='true']"
-        ).length ?? 0,
+        )
+      ).length,
     };
   }
 
-  return (
-    environment.document
-      .querySelectorAll?.("a,button,input,textarea,select,[role='button'],[contenteditable='true']")
-      .slice(0, 20)
+  return toElementArray(
+    environment.document.querySelectorAll?.("a,button,input,textarea,select,[role='button'],[contenteditable='true']")
+  )
+    .slice(0, 20)
       .map((element) => ({
         tagName: (element.tagName ?? "div").toLowerCase(),
         text: extractElementText(element).slice(0, 120),
         ariaLabel: element.getAttribute?.("aria-label"),
-      })) ?? []
-  );
+      }));
 }
 
 function resolveElement(
@@ -332,7 +336,9 @@ function resolveElement(
 
   if (typeof action.text === "string" && action.text.trim()) {
     const trimmed = action.text.trim();
-    const candidates = documentLike.querySelectorAll?.("a,button,input,textarea,select,[role='button'],[contenteditable='true']") ?? [];
+    const candidates = toElementArray(
+      documentLike.querySelectorAll?.("a,button,input,textarea,select,[role='button'],[contenteditable='true']")
+    );
     const matchedByText = candidates.find((element) => extractElementText(element).includes(trimmed));
     if (matchedByText) {
       return matchedByText;
@@ -358,6 +364,12 @@ function inferRoleFromTag(tagName: string): string {
     return "textbox";
   }
   return "generic";
+}
+
+function toElementArray(
+  collection: DocumentLikeCollection | undefined
+): DocumentLikeElement[] {
+  return collection ? Array.from(collection) : [];
 }
 
 function getDefaultContentScriptEnvironment(): ChromeRelayContentScriptEnvironment {
