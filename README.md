@@ -158,6 +158,25 @@ npm run relay:launch -- --url https://example.com
 npm run relay:wait -- --require-target
 ```
 
+如果要启动一个带 `--remote-debugging-port` 的本地 Chromium 系浏览器做 direct-cdp 验证：
+
+```bash
+npm run cdp:launch -- --url https://example.com
+```
+
+如果已经有一个可用的 CDP endpoint，可以等待它真正 ready：
+
+```bash
+npm run cdp:wait -- --cdp-endpoint http://127.0.0.1:9222
+```
+
+如果要一条命令跑完整本地 direct-cdp smoke：
+
+```bash
+npm run cdp:smoke
+npm run cdp:smoke -- --url https://example.com
+```
+
 如果要一条命令跑完整本地 smoke：
 
 ```bash
@@ -169,6 +188,14 @@ npm run relay:smoke -- --url https://example.com
 
 ```bash
 TURNKEYAI_BROWSER_TRANSPORT=relay npm run daemon
+```
+
+配合本地 daemon 走 direct-cdp transport 时，可以显式设置：
+
+```bash
+TURNKEYAI_BROWSER_TRANSPORT=direct-cdp \
+TURNKEYAI_BROWSER_CDP_ENDPOINT=http://127.0.0.1:9222 \
+npm run daemon
 ```
 
 启动本地 daemon：
@@ -232,6 +259,7 @@ npx @turnkeyai/cli tui
 `release-verify` 会对将要公开发布的 CLI 走一遍 `npm pack`、解包、bin/dist help smoke 和 `npm publish --dry-run`，避免 package metadata 在真正发版时才暴露问题；`soak-series` 和单独的 `Long Soak` workflow 会把 `soak / realworld / acceptance` 做多轮聚合运行，用来承接高成本、非 PR required 的长周期稳态验证。
 `validation-profiles` / `validation-profile-run` 会把现有 `validation-run`、`release-verify` 和 `soak-series` 收成固定 hardening 档位：`smoke` 适合本地快速回归，`nightly` / `prerelease` / `weekly` 适合持续稳定性和值班/发版前信心检查。
 `relay-peers` / `relay-targets [peerId]` 可以直接查看本地 daemon 当前看到的 relay 扩展连接和浏览器 tab 发现结果，便于做 extension smoke 和 transport 排障。
+`direct-cdp` 当前也已经有本地 launch / wait / smoke 链路，适合验证“接管一个已启用 CDP 的真实 Chromium 浏览器”这条 transport；对应脚本是 `cdp:launch`、`cdp:wait`、`cdp:smoke`。
 
 模型配置默认会按这个顺序查找：
 

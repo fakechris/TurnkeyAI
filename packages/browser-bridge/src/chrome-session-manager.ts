@@ -925,12 +925,13 @@ export class ChromeSessionManager {
     if (action.kind === "scroll") {
       const amount = action.amount ?? 800;
       const scrollY = await page.evaluate(
-        ({ direction, step }) => {
+        `(() => {
+          const direction = ${JSON.stringify(action.direction)};
+          const step = ${JSON.stringify(amount)};
           const delta = direction === "down" ? step : step * -1;
           window.scrollBy({ top: delta, behavior: "instant" });
           return window.scrollY;
-        },
-        { direction: action.direction, step: amount }
+        })()`
       );
 
       return {
@@ -1172,30 +1173,30 @@ async function safeClose(target: BrowserContext | Browser | Page): Promise<void>
 
 async function executeConsoleProbe(page: Page, probe: BrowserConsoleProbe): Promise<unknown> {
   if (probe === "page-metadata") {
-    return page.evaluate(() => ({
+    return page.evaluate(`(() => ({
       title: document.title,
       href: location.href,
       interactiveCount: document.querySelectorAll(
         "a,button,input,textarea,select,[role='button'],[contenteditable='true']"
       ).length,
-    }));
+    }))()`);
   }
 
   if (probe === "interactive-summary") {
-    return page.evaluate(() =>
+    return page.evaluate(`(() =>
       Array.from(
         document.querySelectorAll("a,button,input,textarea,select,[role='button'],[contenteditable='true']")
       )
         .slice(0, 20)
         .map((element) => {
-          const html = element as HTMLElement;
+          const html = element;
           return {
             tagName: html.tagName.toLowerCase(),
             text: html.innerText.trim().slice(0, 120),
             ariaLabel: html.getAttribute("aria-label"),
           };
         })
-    );
+    )()`);
   }
 
   throw new Error(`unsupported console probe: ${probe}`);
