@@ -141,6 +141,7 @@ function fakePlatform(input: {
         addListener() {},
       },
     },
+    tabs: {},
     async queryTabs(query) {
       if (query.active && query.currentWindow) {
         return [currentTab];

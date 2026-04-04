@@ -48,6 +48,7 @@ function fakePlatform(input: { tabs: Array<{ id: number; url: string; title: str
         addListener() {},
       },
     },
+    tabs: {},
     async queryTabs() {
       return input.tabs;
     },

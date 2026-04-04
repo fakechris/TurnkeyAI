@@ -109,6 +109,28 @@ test("daemon relay client surfaces daemon errors", async () => {
   await assert.rejects(() => client.listTargets(), /relay browser transport is not active/);
 });
 
+test("daemon relay client binds the default global fetch to the current global scope", async () => {
+  const previousFetch = globalThis.fetch;
+  const calls: Array<{ thisValue: unknown; url: string }> = [];
+  globalThis.fetch = function (this: unknown, url: string | URL | Request): Promise<Response> {
+    calls.push({ thisValue: this, url: String(url) });
+    return Promise.resolve(jsonResponse(200, []));
+  } as typeof fetch;
+
+  try {
+    const client = new DaemonRelayClient({
+      baseUrl: "http://127.0.0.1:4100",
+    });
+
+    await client.listTargets();
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.thisValue, globalThis);
+    assert.equal(calls[0]?.url, "http://127.0.0.1:4100/relay/targets");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 function jsonResponse(status: number, payload: RelayPeerRecord | RelayActionRequest | RelayActionResult | RelayTargetRecord[] | { error: string }): Response {
   return new Response(JSON.stringify(payload), {
     status,

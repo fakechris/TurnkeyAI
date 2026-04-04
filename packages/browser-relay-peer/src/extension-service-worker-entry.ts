@@ -1,11 +1,11 @@
 import { loadChromeRelayExtensionRuntimeConfig } from "./chrome-extension-config";
-import { createChromeExtensionPlatformLoop } from "./chrome-extension-service-worker";
+import { installChromeExtensionPlatformLifecycle } from "./chrome-extension-service-worker";
 
 void bootstrapChromeRelayExtensionServiceWorker();
 
 async function bootstrapChromeRelayExtensionServiceWorker(): Promise<void> {
   const config = await loadChromeRelayExtensionRuntimeConfig();
-  const loop = createChromeExtensionPlatformLoop({
+  const controller = installChromeExtensionPlatformLifecycle({
     client: {
       baseUrl: config.daemonBaseUrl,
       ...(config.daemonToken ? { token: config.daemonToken } : {}),
@@ -26,5 +26,5 @@ async function bootstrapChromeRelayExtensionServiceWorker(): Promise<void> {
     },
   });
 
-  loop.start();
+  controller.wake("bootstrap");
 }

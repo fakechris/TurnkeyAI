@@ -144,11 +144,13 @@ packages/browser-relay-peer/dist/extension
 - `service-worker.js`
 - `content-script.js`
 
-如果要直接启动一个带扩展的本地 Chrome 做 smoke：
+如果要直接启动一个带扩展的本地 Chromium 系浏览器做 smoke：
 
 ```bash
 npm run relay:launch -- --url https://example.com
 ```
+
+脚本当前会优先选择支持 unpacked extension flag 的本地浏览器；在 macOS 上，若正式版 `Google Chrome` 忽略这些 flag，优先改用 `Microsoft Edge`、`Chromium`，或显式传 `--chrome-path`。
 
 如果 daemon 已经以 relay 模式启动，可以等待扩展 peer 真正注册上来：
 

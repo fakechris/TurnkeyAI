@@ -12,4 +12,4 @@ export {
 export { ChromeRelayTabObserver } from "./chrome-tab-observer";
 export { ChromeRelayActionExecutor } from "./chrome-action-executor";
 export { registerChromeRelayContentScript, executeChromeRelayContentScriptActions } from "./chrome-content-script";
-export { getChromeExtensionPlatform } from "./chrome-extension-types";
+export { getChromeRuntime, getChromeExtensionPlatform } from "./chrome-extension-types";

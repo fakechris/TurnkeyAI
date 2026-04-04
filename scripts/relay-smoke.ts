@@ -223,8 +223,9 @@ async function resolveFreePort(): Promise<number> {
 async function resolveChromePath(explicitPath?: string): Promise<string> {
   const candidates = [
     explicitPath,
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   ].filter((value): value is string => Boolean(value));
 
   for (const candidate of candidates) {
@@ -234,7 +235,9 @@ async function resolveChromePath(explicitPath?: string): Promise<string> {
     } catch {}
   }
 
-  throw new Error("no local Chrome executable found; pass --chrome-path or set TURNKEYAI_BROWSER_PATH");
+  throw new Error(
+    "no supported Chromium executable found; pass --chrome-path or set TURNKEYAI_BROWSER_PATH"
+  );
 }
 
 async function waitForHealth(baseUrl: string, timeoutMs: number): Promise<void> {

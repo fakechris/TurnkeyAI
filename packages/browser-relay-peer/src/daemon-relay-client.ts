@@ -21,7 +21,7 @@ export class DaemonRelayClient {
   constructor(options: DaemonRelayClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.token = options.token?.trim() || null;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch.bind(globalThis);
   }
 
   async registerPeer(input: RelayPeerRegistration): Promise<RelayPeerRecord> {
