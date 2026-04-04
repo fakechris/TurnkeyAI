@@ -8,6 +8,7 @@
     "./scenario-parity-acceptance": "./src/scenario-parity-acceptance.ts",
     "./real-world-suite": "./src/real-world-suite.ts",
     "./release-readiness": "./src/release-readiness.ts",
+    "./validation-profile": "./src/validation-profile.ts",
     "./validation-suite": "./src/validation-suite.ts",
     "./validation-soak-series": "./src/validation-soak-series.ts",
     "./api-execution-verifier": "./src/api-execution-verifier.ts",

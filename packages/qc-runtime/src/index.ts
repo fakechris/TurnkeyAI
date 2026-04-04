@@ -51,3 +51,4 @@ export * from "./replay-inspection";
 export * from "./runtime-chain-inspection";
 export * from "./validation-suite";
 export * from "./validation-soak-series";
+export * from "./validation-profile";
