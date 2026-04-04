@@ -212,9 +212,9 @@ const SCENARIOS: RealWorldScenarioDescriptor[] = [
       "session-follow-up-reuses-existing-chain",
       "session-scheduled-reentry-preserves-existing-continuity",
       "context-evidence-heavy-keeps-pending-work",
+      "context-reentry-preserves-active-tasks-and-open-questions",
+      "context-continuity-keeps-decisions-and-constraints-under-budget",
       "context-runtime-pressure-keeps-carry-forward-and-waiting-visible",
-      "runtime-prompt-console-summarizes-boundaries",
-      "runtime-chain-query-answers-root-active-and-waiting-point",
     ],
   },
 ];

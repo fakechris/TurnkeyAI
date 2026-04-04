@@ -53,7 +53,7 @@ export function buildValidationOpsRecordFromValidationProfile(input: {
       kind: issue.kind,
       scope: issue.scope,
       summary: issue.summary,
-      commandHint: `validation-profile-run ${input.result.profileId}`,
+      commandHint: buildValidationProfileIssueCommandHint(input.result, issue),
     })
   );
 
@@ -118,7 +118,8 @@ export function buildValidationOpsRecordFromTransportSoak(input: {
   const issues = input.result.targetAggregates
     .filter((aggregate) => aggregate.failedCycles > 0)
     .map((aggregate) => {
-      const topFailureBucket = [...aggregate.failureBuckets]
+      const topFailureBucket = aggregate.failureBuckets
+        .filter((bucket) => bucket.bucket !== "none")
         .sort((left, right) => right.count - left.count || left.bucket.localeCompare(right.bucket))[0];
       const bucketSummary = topFailureBucket ? `${topFailureBucket.bucket} x${topFailureBucket.count}` : "unknown";
       return buildValidationOpsIssue({
@@ -144,6 +145,23 @@ export function buildValidationOpsRecordFromTransportSoak(input: {
     ...(input.artifactPath ? { artifactPath: input.artifactPath } : {}),
     issues,
   };
+}
+
+function buildValidationProfileIssueCommandHint(
+  result: ValidationProfileRunResult,
+  issue: ValidationProfileIssue
+): string {
+  if (issue.kind === "release-check") {
+    return "release-verify";
+  }
+  if (issue.kind === "soak-suite") {
+    const selectors = result.soakSeriesSelectors ?? [];
+    return `soak-series ${result.soakSeriesCycles ?? 1} ${selectors.join(" ")}`.trim();
+  }
+  if (issue.kind === "transport-target") {
+    return `transport-soak ${result.transportSoakCycles ?? 1} ${issue.scope}`.trim();
+  }
+  return `validation-profile-run ${result.profileId}`;
 }
 
 export function buildValidationOpsReport(records: ValidationOpsRunRecord[], limit = 10): ValidationOpsReport {

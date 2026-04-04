@@ -328,6 +328,8 @@ async function runPublishDryRun(
     {
       cwd: extractedPackageDir,
       maxBuffer: 8 * 1024 * 1024,
+      timeout: 120_000,
+      killSignal: "SIGTERM",
     }
   );
   return `${stdout}\n${stderr}`;

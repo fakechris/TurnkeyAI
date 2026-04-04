@@ -7,12 +7,10 @@ import type {
   BrowserTransportSoakResult,
   BrowserTransportSoakTarget,
 } from "./browser-transport-soak";
-import { runReleaseReadiness } from "./release-readiness";
 import type {
   ValidationSuiteId,
   ValidationRunResult,
 } from "./validation-suite";
-import { runValidationSuites } from "./validation-suite";
 import type {
   ValidationSoakSeriesOptions,
   ValidationSoakSeriesResult,
@@ -113,7 +111,7 @@ export interface ValidationProfileRunOptions {
 interface ValidationProfileDeps {
   releaseReadinessRunner: (options?: ReleaseReadinessOptions) => Promise<ReleaseReadinessResult>;
   validationRunner: (selectors?: string[]) => ValidationRunResult;
-  transportSoakRunner?: (options: BrowserTransportSoakOptions) => Promise<BrowserTransportSoakResult>;
+  transportSoakRunner: (options: BrowserTransportSoakOptions) => Promise<BrowserTransportSoakResult>;
 }
 
 const DEFAULT_SOAK_PROFILE_SELECTORS = ["soak", "realworld", "acceptance"] as const;
@@ -184,11 +182,6 @@ const PROFILE_DESCRIPTORS: Record<ValidationProfileId, ValidationProfileDescript
   },
 };
 
-const DEFAULT_DEPS: ValidationProfileDeps = {
-  releaseReadinessRunner: runReleaseReadiness,
-  validationRunner: runValidationSuites,
-};
-
 export function listValidationProfiles(): ValidationProfileDescriptor[] {
   return (["smoke", "nightly", "prerelease", "weekly"] as ValidationProfileId[]).map((profileId) => ({
     ...PROFILE_DESCRIPTORS[profileId],
@@ -210,7 +203,7 @@ export function isValidationProfileId(value: string): value is ValidationProfile
 export async function runValidationProfile(
   profileId: ValidationProfileId,
   options: ValidationProfileRunOptions = {},
-  deps: ValidationProfileDeps = DEFAULT_DEPS
+  deps: ValidationProfileDeps
 ): Promise<ValidationProfileRunResult> {
   const profile = PROFILE_DESCRIPTORS[profileId];
   const startedAt = Date.now();
@@ -263,9 +256,6 @@ export async function runValidationProfile(
   }
 
   if (profile.transportSoakCycles && profile.transportSoakCycles > 0) {
-    if (!deps.transportSoakRunner) {
-      throw new Error(`Transport soak runner is not configured for validation profile ${profile.profileId}`);
-    }
     const transportStartedAt = Date.now();
     const transportTargets = profile.transportSoakTargets ?? [...DEFAULT_TRANSPORT_SOAK_TARGETS];
     const transportResult = await deps.transportSoakRunner({

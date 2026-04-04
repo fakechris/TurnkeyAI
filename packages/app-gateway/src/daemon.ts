@@ -1334,6 +1334,12 @@ const server = http.createServer(async (req, res) => {
       if (body.relayPeerCount !== undefined && (!Number.isInteger(body.relayPeerCount) || body.relayPeerCount <= 0)) {
         return sendJson(res, 400, { error: "Invalid relayPeerCount: must be a positive integer" });
       }
+      if (body.verifyReconnect !== undefined && typeof body.verifyReconnect !== "boolean") {
+        return sendJson(res, 400, { error: "Invalid verifyReconnect: must be a boolean" });
+      }
+      if (body.verifyWorkflowLog !== undefined && typeof body.verifyWorkflowLog !== "boolean") {
+        return sendJson(res, 400, { error: "Invalid verifyWorkflowLog: must be a boolean" });
+      }
       const targets = Array.isArray(body.targets)
         ? body.targets
             .filter((value): value is string => typeof value === "string")

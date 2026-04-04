@@ -65,10 +65,18 @@ for (let index = 0; index < args.length; index += 1) {
     if (!raw || raw.startsWith("-")) {
       throw new Error("missing value for --targets");
     }
-    targets = raw
+    const parsedTargets = raw
       .split(",")
       .map((item) => item.trim())
-      .filter((item): item is BrowserTransportSoakTarget => item === "relay" || item === "direct-cdp");
+      .filter(Boolean);
+    const invalidTargets = parsedTargets.filter((item) => item !== "relay" && item !== "direct-cdp");
+    if (invalidTargets.length > 0) {
+      throw new Error(`unknown --targets entries: ${invalidTargets.join(", ")}`);
+    }
+    if (parsedTargets.length === 0) {
+      throw new Error("--targets requires at least one target");
+    }
+    targets = parsedTargets as BrowserTransportSoakTarget[];
     index += 1;
     continue;
   }
@@ -111,6 +119,8 @@ const result = await runBrowserTransportSoak(
         const { stdout, stderr } = await execFile("npm", commandArgs, {
           cwd: process.cwd(),
           maxBuffer: 16 * 1024 * 1024,
+          timeout: runTimeoutMs,
+          killSignal: "SIGTERM",
         });
         return {
           exitCode: 0,

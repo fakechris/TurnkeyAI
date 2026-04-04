@@ -293,8 +293,8 @@ function normalizeTargets(value?: BrowserTransportSoakTarget[]): BrowserTranspor
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {
-  if (!Number.isFinite(value)) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
   }
-  return Math.max(1, Math.floor(value!));
+  return Math.max(1, Math.floor(value));
 }

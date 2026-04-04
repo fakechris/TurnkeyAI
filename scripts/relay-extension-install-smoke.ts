@@ -26,7 +26,7 @@ try {
     stdout?: string;
     stderr?: string;
     message?: string;
-    code?: number;
+    code?: number | string | null;
   };
   if (failure.stdout) {
     process.stdout.write(failure.stdout);
