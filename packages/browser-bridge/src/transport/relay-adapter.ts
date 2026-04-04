@@ -28,7 +28,7 @@ import { FileBrowserProfileStore } from "../session/file-browser-profile-store";
 import { FileBrowserSessionStore } from "../session/file-browser-session-store";
 import { FileBrowserTargetStore } from "../session/file-browser-target-store";
 import { RelayGateway, isRelayExecutableAction } from "./relay-gateway";
-import type { RelayActionResult } from "./relay-protocol";
+import type { RelayActionRequest, RelayActionResult } from "./relay-protocol";
 import type {
   BrowserTransportAdapter,
   BrowserTransportFactoryOptions,
@@ -217,14 +217,15 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
     dispatchMode: BrowserSessionDispatchMode,
     task: BrowserTaskRequest
   ): Promise<BrowserTaskResult> {
-    const relayActions = task.actions.filter(isRelayExecutableAction);
-    if (relayActions.length !== task.actions.length) {
+    const supportedActions = task.actions.filter(isRelayExecutableAction);
+    if (supportedActions.length !== task.actions.length) {
       const unsupported = task.actions
         .filter((action) => !isRelayExecutableAction(action))
         .map((action) => action.kind)
         .join(", ");
       throw new Error(`relay browser transport does not support action kinds yet: ${unsupported}`);
     }
+    let relayActions = supportedActions;
 
     const lease = task.browserSessionId
       ? await this.sessionManager.resumeSession({
@@ -254,16 +255,27 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
 
     try {
       if (!currentTarget && relayActions[0]?.kind !== "open") {
-        currentTarget = await this.attachDiscoveredTarget(sessionId);
+        currentTarget = await this.attachDiscoveredTarget(sessionId, relayActions);
         currentTargetId = currentTarget.targetId;
         resumeMode = "hot";
         targetResolution = "attach";
       } else if (currentTarget?.transportSessionId) {
-        resumeMode = dispatchMode === "spawn" ? "warm" : "hot";
-        targetResolution = dispatchMode === "spawn" ? "reconnect" : "attach";
+        if (this.hasKnownRelayTarget(currentTarget.transportSessionId)) {
+          resumeMode = dispatchMode === "spawn" ? "warm" : "hot";
+          targetResolution = dispatchMode === "spawn" ? "reconnect" : "attach";
+        } else {
+          const reconnectUrl = currentTarget.url?.trim() || "";
+          currentTarget = await this.attachDiscoveredTarget(sessionId, relayActions);
+          currentTargetId = currentTarget.targetId;
+          if (reconnectUrl && relayActions[0]?.kind !== "open") {
+            relayActions = [{ kind: "open", url: reconnectUrl }, ...relayActions];
+          }
+          resumeMode = "warm";
+          targetResolution = "reconnect";
+        }
       }
 
-      const peerId = this.resolvePeerId(currentTarget?.transportSessionId);
+      const peerId = this.resolvePeerId(relayActions, currentTarget?.transportSessionId);
       const relayResult = await this.gateway.dispatchActionRequest({
         peerId,
         browserSessionId: sessionId,
@@ -328,7 +340,7 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
       };
       const historyEntryId = await this.appendHistoryEntry({
         dispatchMode,
-        task,
+        task: relayActions === task.actions ? task : { ...task, actions: relayActions },
         sessionId,
         startedAt,
         result,
@@ -339,7 +351,7 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
     } catch (error) {
       await this.appendHistoryEntry({
         dispatchMode,
-        task,
+        task: relayActions === task.actions ? task : { ...task, actions: relayActions },
         sessionId,
         startedAt,
         error,
@@ -356,10 +368,20 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
     }
   }
 
-  private async attachDiscoveredTarget(browserSessionId: string): Promise<BrowserTarget> {
+  private async attachDiscoveredTarget(
+    browserSessionId: string,
+    actions: RelayActionRequest["actions"]
+  ): Promise<BrowserTarget> {
+    const requiredCapabilities = new Set(actions.map((action) => action.kind));
+    const capablePeerIds = new Set(
+      this.gateway
+        .listPeers()
+        .filter((peer) => peer.status === "online" && this.peerSupportsActions(peer.capabilities, requiredCapabilities))
+        .map((peer) => peer.peerId)
+    );
     const discoveredTarget = this.gateway
       .listTargets(this.preferredPeerId ? { peerId: this.preferredPeerId } : undefined)
-      .find((item) => item.status !== "closed");
+      .find((item) => item.status !== "closed" && capablePeerIds.has(item.peerId));
     if (!discoveredTarget) {
       throw new Error("no relay target available for attach");
     }
@@ -374,7 +396,7 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
     });
   }
 
-  private resolvePeerId(relayTargetId?: string): string {
+  private resolvePeerId(actions: RelayActionRequest["actions"], relayTargetId?: string): string {
     if (relayTargetId) {
       const knownTarget = this.gateway.listTargets().find((item) => item.relayTargetId === relayTargetId);
       if (knownTarget) {
@@ -386,16 +408,36 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
       return this.preferredPeerId;
     }
 
-    const onlinePeer = this.gateway.listPeers().find((peer) => peer.status === "online");
+    const requiredCapabilities = new Set(actions.map((action) => action.kind));
+    const onlinePeer = this.gateway
+      .listPeers()
+      .find((peer) => peer.status === "online" && this.peerSupportsActions(peer.capabilities, requiredCapabilities));
     if (!onlinePeer) {
       const endpoint = this.options.relay?.endpoint?.trim();
       throw new Error(
         endpoint
-          ? `relay browser transport has no registered peers (endpoint=${endpoint})`
-          : "relay browser transport has no registered peers"
+          ? `relay browser transport has no compatible registered peers (endpoint=${endpoint})`
+          : "relay browser transport has no compatible registered peers"
       );
     }
     return onlinePeer.peerId;
+  }
+
+  private peerSupportsActions(capabilities: string[], requiredCapabilities: ReadonlySet<string>): boolean {
+    if (requiredCapabilities.size === 0) {
+      return true;
+    }
+    const capabilitySet = new Set(capabilities);
+    for (const capability of requiredCapabilities) {
+      if (!capabilitySet.has(capability)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private hasKnownRelayTarget(relayTargetId: string): boolean {
+    return this.gateway.listTargets().some((target) => target.relayTargetId === relayTargetId && target.status !== "closed");
   }
 
   private async persistSnapshotArtifact(input: {

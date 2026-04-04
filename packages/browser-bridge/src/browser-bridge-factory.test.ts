@@ -27,6 +27,19 @@ test("browser bridge factory can build relay transport skeleton", () => {
   assert.ok(maybeGetRelayGateway(bridge));
 });
 
+test("browser bridge factory can build direct-cdp transport", () => {
+  const bridge = createBrowserBridge({
+    artifactRootDir: "/tmp/turnkeyai-browser-factory-direct-cdp",
+    transportMode: "direct-cdp",
+    directCdp: {
+      endpoint: "ws://127.0.0.1:9222/devtools/browser/browser-id",
+    },
+  });
+
+  assert.equal(bridge.transportMode, "direct-cdp");
+  assert.equal(bridge.transportLabel, "direct-cdp");
+});
+
 test("browser bridge factory rejects unknown transport mode", () => {
   assert.throws(
     () => resolveBrowserTransportMode("weird"),
@@ -46,6 +59,17 @@ test("relay transport surfaces a deterministic no-peer error before any peer reg
   await assert.rejects(
     () =>
       bridge.inspectPublicPage("https://example.com"),
-    /relay browser transport has no registered peers/
+    /relay browser transport has no compatible registered peers/
+  );
+});
+
+test("direct-cdp transport fails fast when no endpoint is configured", () => {
+  assert.throws(
+    () =>
+      createBrowserBridge({
+        artifactRootDir: "/tmp/turnkeyai-browser-factory-direct-cdp-missing",
+        transportMode: "direct-cdp",
+      }),
+    /TURNKEYAI_BROWSER_CDP_ENDPOINT/
   );
 });

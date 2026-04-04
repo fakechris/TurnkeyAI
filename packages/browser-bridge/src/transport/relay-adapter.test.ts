@@ -187,6 +187,244 @@ test("relay browser adapter persists screenshot payloads returned by a relay pee
   }
 });
 
+test("relay browser adapter chooses a peer whose capabilities satisfy open actions", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "relay-browser-adapter-"));
+
+  try {
+    const adapter = new RelayBrowserAdapter({
+      artifactRootDir: path.join(tempDir, "artifacts"),
+      stateRootDir: path.join(tempDir, "state"),
+    });
+    const gateway = adapter.getRelayGateway();
+    gateway.registerPeer({
+      peerId: "peer-snapshot-only",
+      capabilities: ["snapshot"],
+      transportLabel: "synthetic-relay",
+    });
+    gateway.reportTargets("peer-snapshot-only", [
+      {
+        relayTargetId: "synthetic-tab:1",
+        url: "https://example.com/placeholder",
+        title: "Placeholder",
+        status: "attached",
+      },
+    ]);
+    gateway.registerPeer({
+      peerId: "peer-browser",
+      capabilities: ["open", "snapshot", "click", "type", "scroll", "console", "screenshot"],
+      transportLabel: "chrome-relay",
+    });
+    gateway.reportTargets("peer-browser", [
+      {
+        relayTargetId: "chrome-tab:1",
+        url: "https://example.com/start",
+        title: "Start",
+        status: "attached",
+      },
+    ]);
+
+    const resultPromise = adapter.spawnSession({
+      taskId: "task-capability-routing",
+      threadId: "thread-1",
+      instructions: "Open a page through a capable relay peer",
+      actions: [
+        { kind: "open", url: "https://example.com/opened" },
+        { kind: "snapshot", note: "after-open" },
+      ],
+      ownerType: "thread",
+      ownerId: "thread-1",
+      profileOwnerType: "thread",
+      profileOwnerId: "thread-1",
+    });
+
+    const request = await waitForActionRequest(() => gateway.pullNextActionRequest("peer-browser"));
+    assert.equal(request.peerId, "peer-browser");
+    assert.equal(gateway.pullNextActionRequest("peer-snapshot-only"), null);
+
+    gateway.submitActionResult({
+      actionRequestId: request.actionRequestId,
+      peerId: "peer-browser",
+      browserSessionId: request.browserSessionId,
+      taskId: request.taskId,
+      relayTargetId: "chrome-tab:1",
+      url: "https://example.com/opened",
+      title: "Opened",
+      status: "completed",
+      page: {
+        requestedUrl: "https://example.com/opened",
+        finalUrl: "https://example.com/opened",
+        title: "Opened",
+        textExcerpt: "Opened page",
+        statusCode: 200,
+        interactives: [],
+      },
+      trace: [
+        {
+          stepId: "task-capability-routing:browser-step:1",
+          kind: "open",
+          startedAt: 1,
+          completedAt: 2,
+          status: "ok",
+          input: { url: "https://example.com/opened" },
+        },
+        {
+          stepId: "task-capability-routing:browser-step:2",
+          kind: "snapshot",
+          startedAt: 3,
+          completedAt: 4,
+          status: "ok",
+          input: { note: "after-open" },
+        },
+      ],
+      screenshotPaths: [],
+      screenshotPayloads: [],
+      artifactIds: [],
+    });
+
+    const result = await resultPromise;
+    assert.equal(result.transportPeerId, "peer-browser");
+    assert.equal(result.transportTargetId, "chrome-tab:1");
+    assert.equal(result.page.finalUrl, "https://example.com/opened");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("relay browser adapter reattaches when a stored relay target disappears after reconnect", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "relay-browser-adapter-"));
+
+  try {
+    const adapter = new RelayBrowserAdapter({
+      artifactRootDir: path.join(tempDir, "artifacts"),
+      stateRootDir: path.join(tempDir, "state"),
+      relay: {
+        relayPeerId: "peer-1",
+      },
+    });
+    const gateway = adapter.getRelayGateway();
+    gateway.registerPeer({
+      peerId: "peer-1",
+      capabilities: ["snapshot", "console"],
+      transportLabel: "chrome-relay",
+    });
+    gateway.reportTargets("peer-1", [
+      {
+        relayTargetId: "chrome-tab:1",
+        url: "https://example.com/submitted",
+        title: "Submitted",
+        status: "attached",
+      },
+    ]);
+
+    const spawnPromise = adapter.spawnSession({
+      taskId: "task-reconnect-spawn",
+      threadId: "thread-1",
+      instructions: "Inspect current tab",
+      actions: [{ kind: "snapshot", note: "initial" }],
+      ownerType: "thread",
+      ownerId: "thread-1",
+      profileOwnerType: "thread",
+      profileOwnerId: "thread-1",
+    });
+
+    const initialRequest = await waitForActionRequest(() => gateway.pullNextActionRequest("peer-1"));
+    gateway.submitActionResult({
+      actionRequestId: initialRequest.actionRequestId,
+      peerId: "peer-1",
+      browserSessionId: initialRequest.browserSessionId,
+      taskId: initialRequest.taskId,
+      relayTargetId: "chrome-tab:1",
+      url: "https://example.com/submitted",
+      title: "Submitted",
+      status: "completed",
+      page: {
+        requestedUrl: "https://example.com/submitted",
+        finalUrl: "https://example.com/submitted",
+        title: "Submitted",
+        textExcerpt: "Submitted page",
+        statusCode: 200,
+        interactives: [],
+      },
+      trace: [],
+      screenshotPaths: [],
+      screenshotPayloads: [],
+      artifactIds: [],
+    });
+    const initialResult = await spawnPromise;
+
+    gateway.reportTargets("peer-1", [
+      {
+        relayTargetId: "chrome-tab:2",
+        url: "https://example.com/submitted",
+        title: "Submitted",
+        status: "attached",
+      },
+    ]);
+
+    const resumePromise = adapter.resumeSession({
+      taskId: "task-reconnect-resume",
+      threadId: "thread-1",
+      browserSessionId: initialResult.sessionId,
+      instructions: "Resume after reconnect",
+      actions: [{ kind: "console", probe: "page-metadata" }],
+      ownerType: "thread",
+      ownerId: "thread-1",
+    });
+
+    const resumedRequest = await waitForActionRequest(() => gateway.pullNextActionRequest("peer-1"));
+    assert.equal(resumedRequest.relayTargetId, "chrome-tab:2");
+    assert.equal(resumedRequest.actions[0]?.kind, "open");
+    assert.equal((resumedRequest.actions[0] as { url?: string }).url, "https://example.com/submitted");
+    assert.equal(resumedRequest.actions[1]?.kind, "console");
+    gateway.submitActionResult({
+      actionRequestId: resumedRequest.actionRequestId,
+      peerId: "peer-1",
+      browserSessionId: resumedRequest.browserSessionId,
+      taskId: resumedRequest.taskId,
+      relayTargetId: "chrome-tab:2",
+      url: "https://example.com/submitted",
+      title: "Submitted",
+      status: "completed",
+      page: {
+        requestedUrl: "https://example.com/submitted",
+        finalUrl: "https://example.com/submitted",
+        title: "Submitted",
+        textExcerpt: "Submitted page",
+        statusCode: 200,
+        interactives: [],
+      },
+      trace: [
+        {
+          stepId: "task-reconnect-resume:browser-step:1",
+          kind: "open",
+          startedAt: 1,
+          completedAt: 2,
+          status: "ok",
+          input: { url: "https://example.com/submitted" },
+        },
+        {
+          stepId: "task-reconnect-resume:browser-step:2",
+          kind: "console",
+          startedAt: 3,
+          completedAt: 4,
+          status: "ok",
+          input: { probe: "page-metadata" },
+          output: { result: { title: "Submitted" } },
+        },
+      ],
+      screenshotPaths: [],
+      screenshotPayloads: [],
+      artifactIds: [],
+    });
+    const resumedResult = await resumePromise;
+    assert.equal(resumedResult.transportTargetId, "chrome-tab:2");
+    assert.equal(resumedResult.resumeMode, "warm");
+    assert.equal(resumedResult.targetResolution, "reconnect");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 async function waitForActionRequest(pull: () => RelayActionRequest | null): Promise<RelayActionRequest> {
   const deadline = Date.now() + 2_000;
   while (Date.now() < deadline) {

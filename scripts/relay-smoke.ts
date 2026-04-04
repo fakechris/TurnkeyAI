@@ -16,6 +16,9 @@ let keepOpen = false;
 let requireTarget = true;
 let requireBrowserAction = true;
 let daemonPort: number | null = null;
+let peerCount = 1;
+let verifyReconnect = false;
+let verifyWorkflowLog = false;
 
 for (let index = 0; index < args.length; index += 1) {
   const arg = args[index];
@@ -81,6 +84,19 @@ for (let index = 0; index < args.length; index += 1) {
     index += 1;
     continue;
   }
+  if (arg === "--peer-count") {
+    const value = args[index + 1];
+    if (!value || value.startsWith("--")) {
+      throw new Error("missing value for --peer-count");
+    }
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      throw new Error("--peer-count must be a positive integer");
+    }
+    peerCount = parsed;
+    index += 1;
+    continue;
+  }
   if (arg === "--skip-build") {
     skipBuild = true;
     continue;
@@ -96,6 +112,14 @@ for (let index = 0; index < args.length; index += 1) {
   }
   if (arg === "--no-browser-action") {
     requireBrowserAction = false;
+    continue;
+  }
+  if (arg === "--verify-reconnect") {
+    verifyReconnect = true;
+    continue;
+  }
+  if (arg === "--verify-workflow-log") {
+    verifyWorkflowLog = true;
   }
 }
 
@@ -112,7 +136,8 @@ async function main(): Promise<void> {
   const effectiveStartUrl = startUrl.trim() || fixture!.url;
 
   let daemonChild: ChildProcess | null = null;
-  let chromeChild: ChildProcess | null = null;
+  const browserChildren = new Map<string, ChildProcess>();
+  const syntheticPeerIds: string[] = [];
 
   try {
     if (!skipBuild) {
@@ -124,6 +149,8 @@ async function main(): Promise<void> {
     }
 
     await mkdir(resolvedProfileDir, { recursive: true });
+    const primaryProfileDir = path.join(resolvedProfileDir, "peer-1");
+    await mkdir(primaryProfileDir, { recursive: true });
 
     daemonChild = spawn("npm", ["run", "daemon"], {
       cwd: process.cwd(),
@@ -136,25 +163,35 @@ async function main(): Promise<void> {
     });
 
     const resolvedChromePath = await resolveChromePath(chromePath ?? process.env.TURNKEYAI_BROWSER_PATH);
-    chromeChild = spawn(
-      resolvedChromePath,
-      [
-        `--user-data-dir=${resolvedProfileDir}`,
-        `--disable-extensions-except=${extensionDir}`,
-        `--load-extension=${extensionDir}`,
-        "--no-first-run",
-        "--no-default-browser-check",
-        effectiveStartUrl,
-      ],
-      {
-        stdio: "ignore",
-      }
+    browserChildren.set(
+      "primary",
+      launchChromePeer({
+        chromePath: resolvedChromePath,
+        extensionDir,
+        profileDir: primaryProfileDir,
+        startUrl: effectiveStartUrl,
+      })
     );
 
     await waitForHealth(resolvedDaemonUrl, timeoutMs);
-    const peerState = await waitForRelayPeer({
+    const peerStates = await waitForRelayPeers({
       daemonUrl: resolvedDaemonUrl,
       timeoutMs,
+      requiredCount: 1,
+      requireTarget,
+    });
+    const primaryPeer = peerStates[0]!;
+    if (peerCount > 1) {
+      syntheticPeerIds.push(...(await registerSyntheticRelayPeers({
+        daemonUrl: resolvedDaemonUrl,
+        count: peerCount - 1,
+        startUrl: effectiveStartUrl,
+      })));
+    }
+    const allPeers = await waitForRelayPeers({
+      daemonUrl: resolvedDaemonUrl,
+      timeoutMs,
+      requiredCount: peerCount,
       requireTarget,
     });
     const browserSmoke =
@@ -165,12 +202,42 @@ async function main(): Promise<void> {
             richActions: !startUrl.trim(),
           })
         : null;
+    const reconnectSmoke =
+      verifyReconnect && browserSmoke
+        ? await runRelayReconnectSmoke({
+            daemonUrl: resolvedDaemonUrl,
+            timeoutMs,
+            peerId: primaryPeer.peerId,
+            browserChild: browserChildren.get("primary")!,
+            relaunch: () =>
+              launchChromePeer({
+                chromePath: resolvedChromePath,
+                extensionDir,
+                profileDir: primaryProfileDir,
+                startUrl: effectiveStartUrl,
+              }),
+            browserSmoke,
+            requireTarget,
+          })
+        : null;
+    if (reconnectSmoke) {
+      browserChildren.set("primary", reconnectSmoke.browserChild);
+    }
+    const workflowLogSmoke =
+      verifyWorkflowLog
+        ? await runRelayWorkflowLogSmoke({
+            daemonUrl: resolvedDaemonUrl,
+          })
+        : null;
 
     console.log("relay smoke passed");
     console.log(`daemon: ${resolvedDaemonUrl}`);
-    console.log(`peer: ${peerState.peerId}`);
-    if (peerState.targets !== null) {
-      console.log(`targets: ${peerState.targets}`);
+    console.log(`peer: ${primaryPeer.peerId}`);
+    if (primaryPeer.targets !== null) {
+      console.log(`targets: ${primaryPeer.targets}`);
+    }
+    if (allPeers.length > 1) {
+      console.log(`peer-count: ${allPeers.length}`);
     }
     if (browserSmoke) {
       console.log(`browser-session: ${browserSmoke.sessionId}`);
@@ -181,17 +248,29 @@ async function main(): Promise<void> {
         console.log(`browser-resume-final-url: ${browserSmoke.resumeFinalUrl}`);
       }
     }
+    if (reconnectSmoke) {
+      console.log(`reconnect-peer: ${reconnectSmoke.peerId}`);
+      console.log(`reconnect-history: ${reconnectSmoke.historyLength}`);
+      console.log(`reconnect-final-url: ${reconnectSmoke.finalUrl}`);
+    }
+    if (workflowLogSmoke) {
+      console.log(`workflow-log-case: ${workflowLogSmoke.caseId}`);
+      console.log(`workflow-log-status: ${workflowLogSmoke.status}`);
+    }
+    if (syntheticPeerIds.length > 0) {
+      console.log(`synthetic-peers: ${syntheticPeerIds.join(",")}`);
+    }
     console.log(`profile: ${resolvedProfileDir}`);
     console.log(`url: ${effectiveStartUrl}`);
 
     if (keepOpen) {
       console.log("processes left running due to --keep-open");
       daemonChild = null;
-      chromeChild = null;
+      browserChildren.clear();
     }
   } finally {
-    if (chromeChild) {
-      chromeChild.kill("SIGTERM");
+    for (const child of browserChildren.values()) {
+      child.kill("SIGTERM");
     }
     if (daemonChild) {
       daemonChild.kill("SIGTERM");
@@ -201,6 +280,28 @@ async function main(): Promise<void> {
       await rm(resolvedProfileDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
+}
+
+function launchChromePeer(input: {
+  chromePath: string;
+  extensionDir: string;
+  profileDir: string;
+  startUrl: string;
+}): ChildProcess {
+  return spawn(
+    input.chromePath,
+    [
+      `--user-data-dir=${input.profileDir}`,
+      `--disable-extensions-except=${input.extensionDir}`,
+      `--load-extension=${input.extensionDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+      input.startUrl,
+    ],
+    {
+      stdio: "ignore",
+    }
+  );
 }
 
 async function runCommand(command: string, argv: string[], extraEnv: Record<string, string> = {}): Promise<void> {
@@ -284,30 +385,40 @@ async function waitForHealth(baseUrl: string, timeoutMs: number): Promise<void> 
   throw new Error(`timed out waiting for daemon health | last error: ${lastError ?? "unknown"}`);
 }
 
-async function waitForRelayPeer(input: {
+async function waitForRelayPeers(input: {
   daemonUrl: string;
   timeoutMs: number;
+  requiredCount: number;
   requireTarget: boolean;
-}): Promise<{ peerId: string; targets: number | null }> {
+}): Promise<Array<{ peerId: string; targets: number | null }>> {
   const deadline = Date.now() + input.timeoutMs;
   let lastError: string | null = null;
 
   while (Date.now() < deadline) {
     try {
-      const peers = (await getJson(`${input.daemonUrl}/relay/peers`)) as Array<{
+      const peers = ((await getJson(`${input.daemonUrl}/relay/peers`)) as Array<{
         peerId: string;
         status: "online" | "stale";
-      }>;
-      const matchedPeer = peers.find((item) => item.status === "online");
-      if (matchedPeer) {
-        if (!input.requireTarget) {
-          return { peerId: matchedPeer.peerId, targets: null };
+      }>).filter((item) => item.status === "online");
+      if (peers.length >= input.requiredCount) {
+        const peerStates: Array<{ peerId: string; targets: number | null }> = [];
+        let satisfied = true;
+        for (const peer of peers.slice(0, input.requiredCount)) {
+          if (!input.requireTarget) {
+            peerStates.push({ peerId: peer.peerId, targets: null });
+            continue;
+          }
+          const targets = (await getJson(
+            `${input.daemonUrl}/relay/targets?peerId=${encodeURIComponent(peer.peerId)}`
+          )) as Array<{ relayTargetId: string }>;
+          if (targets.length === 0) {
+            satisfied = false;
+            break;
+          }
+          peerStates.push({ peerId: peer.peerId, targets: targets.length });
         }
-        const targets = (await getJson(
-          `${input.daemonUrl}/relay/targets?peerId=${encodeURIComponent(matchedPeer.peerId)}`
-        )) as Array<{ relayTargetId: string }>;
-        if (targets.length > 0) {
-          return { peerId: matchedPeer.peerId, targets: targets.length };
+        if (satisfied && peerStates.length === input.requiredCount) {
+          return peerStates;
         }
       }
       lastError = null;
@@ -317,7 +428,7 @@ async function waitForRelayPeer(input: {
     await sleep(500);
   }
 
-  throw new Error(`timed out waiting for relay peer | last error: ${lastError ?? "unknown"}`);
+  throw new Error(`timed out waiting for relay peers | last error: ${lastError ?? "unknown"}`);
 }
 
 async function runBrowserSessionSmoke(input: {
@@ -325,6 +436,7 @@ async function runBrowserSessionSmoke(input: {
   startUrl: string;
   richActions: boolean;
 }): Promise<{
+  threadId: string;
   sessionId: string;
   finalUrl: string;
   resumeFinalUrl?: string;
@@ -373,6 +485,7 @@ async function runBrowserSessionSmoke(input: {
   if (!input.richActions) {
     const history = await getSessionHistory(input.daemonUrl, threadId, sessionId);
     return {
+      threadId,
       sessionId,
       finalUrl,
       historyLength: history.length,
@@ -454,11 +567,149 @@ async function runBrowserSessionSmoke(input: {
   }
 
   return {
+    threadId,
     sessionId,
     finalUrl: sendFinalUrl,
     resumeFinalUrl,
     historyLength: history.length,
     transportLabel: sendTransportLabel,
+  };
+}
+
+async function runRelayReconnectSmoke(input: {
+  daemonUrl: string;
+  timeoutMs: number;
+  peerId: string;
+  browserChild: ChildProcess;
+  relaunch: () => ChildProcess;
+  browserSmoke: Awaited<ReturnType<typeof runBrowserSessionSmoke>>;
+  requireTarget: boolean;
+}): Promise<{
+  peerId: string;
+  browserChild: ChildProcess;
+  historyLength: number;
+  finalUrl: string;
+}> {
+  input.browserChild.kill("SIGTERM");
+  await waitForRelayPeerStatus({
+    daemonUrl: input.daemonUrl,
+    peerId: input.peerId,
+    timeoutMs: input.timeoutMs,
+    status: "stale",
+  });
+
+  const relaunched = input.relaunch();
+  await waitForRelayPeerStatus({
+    daemonUrl: input.daemonUrl,
+    peerId: input.peerId,
+    timeoutMs: input.timeoutMs,
+    status: "online",
+  });
+  if (input.requireTarget) {
+    const targets = (await getJson(
+      `${input.daemonUrl}/relay/targets?peerId=${encodeURIComponent(input.peerId)}`
+    )) as Array<{ relayTargetId: string }>;
+    if (targets.length === 0) {
+      throw new Error(`relay reconnect smoke did not restore targets for ${input.peerId}`);
+    }
+  }
+
+  const resumeResponse = (await postJson(
+    `${input.daemonUrl}/browser-sessions/${encodeURIComponent(input.browserSmoke.sessionId)}/resume`,
+    {
+      threadId: input.browserSmoke.threadId,
+      instructions: "Resume after relay peer reconnect and confirm the form state still holds.",
+      actions: [
+        { kind: "console", probe: "page-metadata" },
+        { kind: "snapshot", note: "post-peer-reconnect" },
+      ],
+    }
+  )) as BrowserSmokeResponse;
+  const finalUrl = requireString(resumeResponse.page?.finalUrl, "relay reconnect resume final page URL");
+  if (!finalUrl.includes("#submitted")) {
+    throw new Error(`relay reconnect smoke lost page state after peer restart: ${finalUrl}`);
+  }
+  const history = await getSessionHistory(
+    input.daemonUrl,
+    input.browserSmoke.threadId,
+    input.browserSmoke.sessionId
+  );
+  return {
+    peerId: input.peerId,
+    browserChild: relaunched,
+    historyLength: history.length,
+    finalUrl,
+  };
+}
+
+async function waitForRelayPeerStatus(input: {
+  daemonUrl: string;
+  peerId: string;
+  timeoutMs: number;
+  status: "online" | "stale";
+}): Promise<void> {
+  const deadline = Date.now() + input.timeoutMs;
+  while (Date.now() < deadline) {
+    const peers = (await getJson(`${input.daemonUrl}/relay/peers`)) as Array<{
+      peerId: string;
+      status: "online" | "stale";
+    }>;
+    if (peers.some((peer) => peer.peerId === input.peerId && peer.status === input.status)) {
+      return;
+    }
+    await sleep(300);
+  }
+
+  throw new Error(`timed out waiting for relay peer ${input.peerId} to become ${input.status}`);
+}
+
+async function registerSyntheticRelayPeers(input: {
+  daemonUrl: string;
+  count: number;
+  startUrl: string;
+}): Promise<string[]> {
+  const peerIds: string[] = [];
+  for (let index = 0; index < input.count; index += 1) {
+    const peerId = `synthetic-relay-peer-${index + 2}`;
+    peerIds.push(peerId);
+    await postJson(`${input.daemonUrl}/relay/peers/register`, {
+      peerId,
+      label: `Synthetic Relay Peer ${index + 2}`,
+      capabilities: ["snapshot"],
+      transportLabel: "synthetic-relay",
+    });
+    await postJson(`${input.daemonUrl}/relay/peers/${encodeURIComponent(peerId)}/targets/report`, {
+      targets: [
+        {
+          relayTargetId: `synthetic-tab:${index + 2}`,
+          url: input.startUrl,
+          title: `Synthetic Relay Target ${index + 2}`,
+          status: "open",
+        },
+      ],
+    });
+  }
+  return peerIds;
+}
+
+async function runRelayWorkflowLogSmoke(input: {
+  daemonUrl: string;
+}): Promise<{ caseId: string; status: string }> {
+  const caseId = "relay-recovery-workflow-log-surfaces-peer-diagnostics";
+  const result = (await postJson(`${input.daemonUrl}/regression-cases/run`, {
+    caseIds: [caseId],
+  })) as {
+    totalCases?: number;
+    failedCases?: number;
+    results?: Array<{ caseId?: string; status?: string; details?: string[] }>;
+  };
+  const entry = result.results?.[0];
+  if (!entry || entry.caseId !== caseId || entry.status !== "passed" || result.failedCases !== 0) {
+    throw new Error(`relay workflow log smoke failed: ${JSON.stringify(entry ?? result)}`);
+  }
+  return {
+    caseId,
+    status: entry.status,
   };
 }
 

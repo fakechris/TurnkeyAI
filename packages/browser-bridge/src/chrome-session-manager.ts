@@ -7,6 +7,7 @@ import type {
   BrowserConsoleProbe,
   BrowserInteractiveElement,
   BrowserOwnerType,
+  BrowserTransportMode,
   BrowserSnapshotResult,
   BrowserSessionDispatchMode,
   BrowserSessionHistoryEntry,
@@ -35,6 +36,8 @@ export class ChromeSessionManager {
   private readonly artifactRootDir: string;
   private readonly executablePath: string | undefined;
   private readonly headless: boolean;
+  private readonly transportMode: BrowserTransportMode;
+  private readonly transportLabel: string;
   private readonly browserSessionManager: LocalBrowserSessionManager | undefined;
   private readonly browserSessionHistoryStore: BrowserSessionHistoryStore | undefined;
   private readonly snapshotRefStore: SnapshotRefStore | undefined;
@@ -59,6 +62,8 @@ export class ChromeSessionManager {
     artifactRootDir: string;
     executablePath?: string;
     headless?: boolean;
+    transportMode?: BrowserTransportMode;
+    transportLabel?: string;
     browserSessionManager?: LocalBrowserSessionManager;
     browserSessionHistoryStore?: BrowserSessionHistoryStore;
     snapshotRefStore?: SnapshotRefStore;
@@ -75,6 +80,8 @@ export class ChromeSessionManager {
     this.artifactRootDir = options.artifactRootDir;
     this.executablePath = options.executablePath;
     this.headless = options.headless ?? true;
+    this.transportMode = options.transportMode ?? "local";
+    this.transportLabel = options.transportLabel ?? "local-automation";
     this.browserSessionManager = options.browserSessionManager;
     this.browserSessionHistoryStore = options.browserSessionHistoryStore;
     this.snapshotRefStore = options.snapshotRefStore;
@@ -148,7 +155,7 @@ export class ChromeSessionManager {
           ownerId: task.ownerId ?? task.threadId,
           profileOwnerType: task.profileOwnerType ?? task.ownerType ?? "thread",
           profileOwnerId: task.profileOwnerId ?? task.ownerId ?? task.threadId,
-          preferredTransport: "local",
+          preferredTransport: this.transportMode,
           reusable: true,
           ...(task.leaseHolderRunKey ? { leaseHolderRunKey: task.leaseHolderRunKey } : {}),
           ...(task.leaseTtlMs !== undefined ? { leaseTtlMs: task.leaseTtlMs } : {}),
@@ -351,8 +358,8 @@ export class ChromeSessionManager {
       const result: BrowserTaskResult = {
         sessionId,
         ...(currentTargetId ? { targetId: currentTargetId } : {}),
-        transportMode: "local",
-        transportLabel: "local-automation",
+        transportMode: this.transportMode,
+        transportLabel: this.transportLabel,
         transportTargetId: this.getOrCreatePageHandle(page),
         dispatchMode,
         resumeMode,
@@ -433,6 +440,7 @@ export class ChromeSessionManager {
       ...(result?.targetId ? { targetId: result.targetId } : {}),
       ...(result?.transportMode ? { transportMode: result.transportMode } : {}),
       ...(result?.transportLabel ? { transportLabel: result.transportLabel } : {}),
+      ...(result?.transportPeerId ? { transportPeerId: result.transportPeerId } : {}),
       ...(result?.transportTargetId ? { transportTargetId: result.transportTargetId } : {}),
       historyCursor: input.startedAt,
       startedAt: input.startedAt,

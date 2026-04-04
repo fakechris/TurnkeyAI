@@ -1,5 +1,6 @@
 import type { BrowserTransportMode } from "@turnkeyai/core-types/team";
 
+import { DirectCdpBrowserAdapter } from "./transport/direct-cdp-adapter";
 import { LocalAutomationBrowserAdapter } from "./transport/local-automation-adapter";
 import { RelayBrowserAdapter } from "./transport/relay-adapter";
 import type {
@@ -16,7 +17,7 @@ export function createBrowserBridge(options: BrowserBridgeFactoryOptions): Brows
     case "relay":
       return new RelayBrowserAdapter(options);
     case "direct-cdp":
-      throw new Error("direct-cdp browser transport is not implemented yet");
+      return new DirectCdpBrowserAdapter(options);
   }
 }
 

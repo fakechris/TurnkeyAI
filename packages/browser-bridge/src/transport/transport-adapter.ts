@@ -20,7 +20,12 @@ export interface RelayTransportOptions {
   relayPeerId?: string;
 }
 
+export interface DirectCdpTransportOptions {
+  endpoint?: string;
+}
+
 export interface BrowserBridgeFactoryOptions extends BrowserTransportFactoryOptions {
   transportMode?: BrowserTransportMode;
   relay?: RelayTransportOptions;
+  directCdp?: DirectCdpTransportOptions;
 }

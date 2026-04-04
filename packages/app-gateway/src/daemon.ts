@@ -353,6 +353,11 @@ const browserBridge = createBrowserBridge({
       ? { relayPeerId: process.env.TURNKEYAI_BROWSER_RELAY_PEER_ID.trim() }
       : {}),
   },
+  directCdp: {
+    ...(process.env.TURNKEYAI_BROWSER_CDP_ENDPOINT?.trim()
+      ? { endpoint: process.env.TURNKEYAI_BROWSER_CDP_ENDPOINT.trim() }
+      : {}),
+  },
 });
 const relayGateway = maybeGetRelayGateway(browserBridge);
 function getRelayDiagnosticsSnapshot() {
