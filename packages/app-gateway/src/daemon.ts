@@ -118,6 +118,12 @@ import {
   listValidationProfiles,
   runValidationProfile,
 } from "@turnkeyai/qc-runtime/validation-profile";
+import {
+  buildValidationOpsRecordFromReleaseReadiness,
+  buildValidationOpsRecordFromSoakSeries,
+  buildValidationOpsRecordFromValidationProfile,
+  buildValidationOpsReport,
+} from "@turnkeyai/qc-runtime/validation-ops-inspection";
 import { CoordinationEngine } from "@turnkeyai/team-runtime/coordination-engine";
 import { DefaultContextStateMaintainer } from "@turnkeyai/team-runtime/context-state-maintainer";
 import { FileBackedTeamRouteMap } from "@turnkeyai/team-runtime/file-backed-team-route-map";
@@ -158,6 +164,7 @@ import { FileSessionMemoryRefreshJobStore } from "@turnkeyai/team-store/context/
 import { FileTeamMessageStore } from "@turnkeyai/team-store/file-team-message-store";
 import { FileTeamThreadStore } from "@turnkeyai/team-store/file-team-thread-store";
 import { FilePermissionCacheStore } from "@turnkeyai/team-store/governance/file-permission-cache-store";
+import { FileValidationOpsRunStore } from "@turnkeyai/team-store/ops/file-validation-ops-run-store";
 import { FileRecoveryRunStore } from "@turnkeyai/team-store/recovery/file-recovery-run-store";
 import { FileRecoveryRunEventStore } from "@turnkeyai/team-store/recovery/file-recovery-run-event-store";
 import { FileScheduledTaskStore } from "@turnkeyai/team-store/scheduled/file-scheduled-task-store";
@@ -169,6 +176,10 @@ import { LocalWorkerRuntime } from "@turnkeyai/worker-runtime/local-worker-runti
 import { DefaultWorkerRegistry } from "@turnkeyai/worker-runtime/worker-registry";
 
 import { buildRecoveryRunActionConflict } from "./recovery-run-guards";
+
+if (wantsProcessHelp(process.argv.slice(2))) {
+  printDaemonHelp(0);
+}
 
 const PORT = Number(process.env.TURNKEYAI_DAEMON_PORT ?? 4100);
 const DATA_DIR = path.resolve(process.cwd(), ".daemon-data");
@@ -255,6 +266,9 @@ const recoveryRunEventStore = new FileRecoveryRunEventStore({
 });
 const scheduledTaskStore = new FileScheduledTaskStore({
   rootDir: path.join(DATA_DIR, "scheduled-tasks"),
+});
+const validationOpsRunStore = new FileValidationOpsRunStore({
+  rootDir: path.join(DATA_DIR, "validation-ops-runs"),
 });
 
 const summaryBuilder: SummaryBuilder = {
@@ -1219,13 +1233,31 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/validation-ops") {
+      const requestedLimit = Number(url.searchParams.get("limit") ?? "10");
+      const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.floor(requestedLimit) : 10;
+      const records = await validationOpsRunStore.list(limit);
+      return sendJson(res, 200, buildValidationOpsReport(records, limit));
+    }
+
     if (req.method === "POST" && url.pathname === "/validation-profiles/run") {
       const body = await readJsonBody<{ profileId?: string }>(req);
       const profileId = typeof body.profileId === "string" ? body.profileId.trim() : undefined;
       if (!profileId || !isValidationProfileId(profileId)) {
         return sendJson(res, 400, { error: "Unknown validation profile" });
       }
-      return sendJson(res, 200, await runValidationProfile(profileId));
+      const startedAt = Date.now();
+      const result = await runValidationProfile(profileId);
+      const completedAt = Date.now();
+      await validationOpsRunStore.put(
+        buildValidationOpsRecordFromValidationProfile({
+          runId: createValidationOpsRunId("validation-profile"),
+          startedAt,
+          completedAt,
+          result,
+        })
+      );
+      return sendJson(res, 200, result);
     }
 
     if (req.method === "POST" && url.pathname === "/soak-series/run") {
@@ -1241,13 +1273,25 @@ const server = http.createServer(async (req, res) => {
       }
       const cycles = body.cycles !== undefined ? Number(body.cycles) : undefined;
       try {
+        const startedAt = Date.now();
+        const result = runValidationSoakSeries({
+          ...(cycles !== undefined ? { cycles } : {}),
+          ...(selectors !== undefined ? { selectors } : {}),
+        });
+        const completedAt = Date.now();
+        await validationOpsRunStore.put(
+          buildValidationOpsRecordFromSoakSeries({
+            runId: createValidationOpsRunId("soak-series"),
+            startedAt,
+            completedAt,
+            selectors: result.selectors,
+            result,
+          })
+        );
         return sendJson(
           res,
           200,
-          runValidationSoakSeries({
-            ...(cycles !== undefined ? { cycles } : {}),
-            ...(selectors !== undefined ? { selectors } : {}),
-          })
+          result
         );
       } catch (error) {
         if (error instanceof ValidationSelectorError) {
@@ -1258,7 +1302,18 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/release-readiness/run") {
-      return sendJson(res, 200, await runReleaseReadiness());
+      const startedAt = Date.now();
+      const result = await runReleaseReadiness();
+      const completedAt = Date.now();
+      await validationOpsRunStore.put(
+        buildValidationOpsRecordFromReleaseReadiness({
+          runId: createValidationOpsRunId("release-readiness"),
+          startedAt,
+          completedAt,
+          result,
+        })
+      );
+      return sendJson(res, 200, result);
     }
 
     if (req.method === "GET" && url.pathname === "/replay-incidents") {
@@ -1955,6 +2010,10 @@ function createIdGenerator(): IdGenerator {
     messageId: () => next("MSG"),
     taskId: () => next("TASK"),
   };
+}
+
+function createValidationOpsRunId(kind: "release-readiness" | "validation-profile" | "soak-series"): string {
+  return `validation-ops:${kind}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function buildDemoRoles(variant: string) {
@@ -3449,4 +3508,28 @@ function extractBrowserSessionHintFromReplay(
 
 function normalizeBrowserOwnerType(value: unknown): BrowserContinuationHint["ownerType"] | undefined {
   return value === "user" || value === "thread" || value === "role" || value === "worker" ? value : undefined;
+}
+
+function wantsProcessHelp(args: string[]): boolean {
+  return args.includes("--help") || args.includes("-h") || args.includes("help");
+}
+
+function printDaemonHelp(exitCode: number): never {
+  const lines = [
+    "TurnkeyAI Daemon",
+    "",
+    "Usage:",
+    "  turnkeyai daemon",
+    "  turnkeyai daemon --help",
+    "",
+    "Environment:",
+    "  TURNKEYAI_DAEMON_PORT       Override the daemon listen port",
+    "  TURNKEYAI_DAEMON_TOKEN      Require bearer auth for daemon requests",
+    "  TURNKEYAI_BROWSER_TRANSPORT Select browser transport: local | relay | direct-cdp",
+    "  TURNKEYAI_BROWSER_CDP_ENDPOINT  CDP endpoint for direct-cdp transport",
+    "  TURNKEYAI_BROWSER_CHROME_EXECUTABLE Optional browser executable override",
+  ];
+  const output = exitCode === 0 ? console.log : console.error;
+  output(lines.join("\n"));
+  process.exit(exitCode);
 }

@@ -52,3 +52,4 @@ export * from "./runtime-chain-inspection";
 export * from "./validation-suite";
 export * from "./validation-soak-series";
 export * from "./validation-profile";
+export * from "./validation-ops-inspection";

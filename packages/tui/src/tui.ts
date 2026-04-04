@@ -25,6 +25,7 @@ import type {
   RecoveryRunTimelineEntry,
   TeamEvent,
   ThreadSessionMemoryRecord,
+  ValidationOpsReport,
 } from "@turnkeyai/core-types/team";
 import {
   describeRecoveryRunGate,
@@ -36,6 +37,10 @@ import {
 } from "@turnkeyai/qc-runtime/operator-inspection";
 
 const baseUrl = process.env.TURNKEYAI_DAEMON_URL ?? "http://127.0.0.1:4100";
+
+if (wantsProcessHelp(process.argv.slice(2))) {
+  printTuiUsage(0);
+}
 
 const rl = readline.createInterface({ input, output });
 let currentThreadId: string | null = null;
@@ -501,6 +506,11 @@ while (true) {
       continue;
     }
 
+    if (command === "validation-ops") {
+      await handleValidationOpsCommand(args);
+      continue;
+    }
+
     if (command === "validation-cases") {
       await handleValidationCasesCommand();
       continue;
@@ -625,6 +635,29 @@ while (true) {
 
 await rl.close();
 
+function wantsProcessHelp(args: string[]): boolean {
+  return args.includes("--help") || args.includes("-h") || args.includes("help");
+}
+
+function printTuiUsage(exitCode: number): never {
+  const lines = [
+    "TurnkeyAI TUI",
+    "",
+    "Usage:",
+    "  turnkeyai tui",
+    "  turnkeyai tui --help",
+    "",
+    "Environment:",
+    "  TURNKEYAI_DAEMON_URL  Override the daemon base URL",
+    "  TURNKEYAI_DAEMON_TOKEN  Send bearer auth for daemon requests",
+    "",
+    "Run without flags to enter interactive mode.",
+  ];
+  const output = exitCode === 0 ? console.log : console.error;
+  output(lines.join("\n"));
+  process.exit(exitCode);
+}
+
 function printBanner(): void {
   console.log("Runtime Lab TUI");
   console.log(`daemon: ${baseUrl}`);
@@ -695,6 +728,7 @@ function printHelp(): void {
   console.log("  realworld-run [scenarioId ...]        run real-world runbook validation suite");
   console.log("  soak-series [cycles] [suite[:item] ...]  run multi-cycle validation soak across selected suites");
   console.log("  release-verify                        verify packaged CLI and npm publish dry-run readiness");
+  console.log("  validation-ops [limit]               show operator-facing validation/release/soak run summary");
   console.log("  validation-cases                      list unified validation suites and items");
   console.log("  validation-profiles                   list fixed validation hardening profiles");
   console.log("  validation-run [suite[:item] ...]     run unified validation suites or individual items");
@@ -1579,6 +1613,55 @@ function printOperatorTriage(report: OperatorTriageReport): void {
   }
 }
 
+function printValidationOpsReport(report: ValidationOpsReport): void {
+  console.log("Validation Ops");
+  console.log(
+    `  runs=${report.totalRuns}  failed=${report.failedRuns}  passed=${report.passedRuns}  attention=${report.attentionCount}`
+  );
+  if (Object.keys(report.runTypeCounts).length > 0) {
+    console.log(`  run types: ${formatCountMap(report.runTypeCounts)}`);
+  }
+  if (Object.keys(report.bucketCounts).length > 0) {
+    console.log(`  buckets: ${formatCountMap(report.bucketCounts)}`);
+  }
+  if (Object.keys(report.severityCounts).length > 0) {
+    console.log(`  severity: ${formatCountMap(report.severityCounts)}`);
+  }
+  if (Object.keys(report.recommendedActionCounts).length > 0) {
+    console.log(`  actions: ${formatCountMap(report.recommendedActionCounts)}`);
+  }
+  if (report.latestRuns.length > 0) {
+    console.log("  latest runs:");
+    for (const run of report.latestRuns) {
+      const parts = [
+        run.runId,
+        `type=${run.runType}`,
+        `status=${run.status}`,
+        `issues=${run.issueCount}`,
+        `durationMs=${run.durationMs}`,
+      ];
+      if (run.profileId) {
+        parts.push(`profile=${run.profileId}`);
+      }
+      if (run.cycles) {
+        parts.push(`cycles=${run.cycles}`);
+      }
+      console.log(`    - ${parts.join("  ")}`);
+      console.log(`      ${run.title}`);
+    }
+  }
+  if (report.activeIssues.length > 0) {
+    console.log("  active issues:");
+    for (const issue of report.activeIssues) {
+      console.log(
+        `    - ${issue.runType}  ${issue.issueId}  severity=${issue.severity}  bucket=${issue.bucket}  action=${issue.recommendedAction}`
+      );
+      console.log(`      ${issue.summary}`);
+      console.log(`      cmd=${issue.commandHint}`);
+    }
+  }
+}
+
 async function printInspect(threadId: string): Promise<void> {
   const [messages, flows, runs] = await Promise.all([
     getJson(`/messages?threadId=${encodeURIComponent(threadId)}`),
@@ -2392,6 +2475,13 @@ async function handleReleaseVerifyCommand(): Promise<void> {
       }>;
     }
   );
+}
+
+async function handleValidationOpsCommand(raw: string): Promise<void> {
+  const requestedLimit = Number(raw.trim() || "10");
+  const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.floor(requestedLimit) : 10;
+  const params = new URLSearchParams({ limit: String(limit) });
+  printValidationOpsReport((await getJson(`/validation-ops?${params.toString()}`)) as ValidationOpsReport);
 }
 
 async function handleReplayIncidentsCommand(raw: string): Promise<void> {
