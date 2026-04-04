@@ -630,6 +630,8 @@ export interface OperatorTriageReport {
   runtimeWaitingCount: number;
   runtimeStaleCount: number;
   runtimeFailedCount: number;
+  workerSessionOrphanCount: number;
+  workerSessionMissingContextCount: number;
   promptReductionCount: number;
   promptAttentionCount: number;
   recommendedEntryPoint?: string;

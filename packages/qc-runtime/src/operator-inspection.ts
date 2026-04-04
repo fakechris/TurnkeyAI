@@ -570,6 +570,22 @@ export function buildOperatorTriageReport(input: {
     });
   }
 
+  if ((input.summary.workerSessionHealth?.orphanedSessions ?? 0) > 0) {
+    focusAreas.push({
+      area: "runtime",
+      label: "worker-session-drift",
+      severity: "critical",
+      headline: `worker session drift orphaned=${input.summary.workerSessionHealth?.orphanedSessions ?? 0}`,
+      reason:
+        (input.summary.workerSessionHealth?.missingContextSessions ?? 0) > 0
+          ? `Detected orphaned worker sessions and ${input.summary.workerSessionHealth?.missingContextSessions ?? 0} active session(s) without thread context.`
+          : "Detected active worker sessions that are no longer referenced by any role run.",
+      nextStep: "inspect_runtime_worker_sessions",
+      commandHint: "runtime-summary 10",
+      state: "worker_session_drift",
+    });
+  }
+
   const promptPrimary = input.summary.prompt.latestBoundaries[0];
   const hasPromptCase = input.attention.cases.some((entry) => entry.sources.includes("prompt"));
   if (!hasPromptCase && (input.summary.prompt.reductionCount > 0 || input.summary.promptAttentionCount > 0)) {
@@ -601,6 +617,8 @@ export function buildOperatorTriageReport(input: {
     runtimeWaitingCount: input.runtime.waitingCount,
     runtimeStaleCount: input.runtime.staleCount,
     runtimeFailedCount: input.runtime.failedCount,
+    workerSessionOrphanCount: input.summary.workerSessionHealth?.orphanedSessions ?? 0,
+    workerSessionMissingContextCount: input.summary.workerSessionHealth?.missingContextSessions ?? 0,
     promptReductionCount: input.summary.prompt.reductionCount,
     promptAttentionCount: input.summary.promptAttentionCount,
     ...(orderedFocusAreas[0]?.commandHint ? { recommendedEntryPoint: orderedFocusAreas[0].commandHint } : {}),

@@ -1389,6 +1389,84 @@ test("operator triage uses a safe stale runtime fallback when chain details are 
   assert.equal(staleFocus?.state, undefined);
 });
 
+test("operator triage surfaces worker session drift when runtime summary reports orphaned sessions", () => {
+  const summary = buildOperatorSummaryReport({
+    flows: [],
+    permissionRecords: [],
+    events: [],
+    replays: [],
+    recoveryRuns: [],
+    runtimeSummary: {
+      totalChains: 0,
+      activeCount: 0,
+      waitingCount: 0,
+      failedCount: 0,
+      resolvedCount: 0,
+      staleCount: 0,
+      attentionCount: 0,
+      stateCounts: {},
+      continuityCounts: {},
+      caseStateCounts: {},
+      attentionChains: [],
+      activeChains: [],
+      waitingChains: [],
+      staleChains: [],
+      failedChains: [],
+      recentlyResolved: [],
+      workerSessionHealth: {
+        totalSessions: 3,
+        activeSessions: 2,
+        orphanedSessions: 1,
+        missingContextSessions: 1,
+      },
+    },
+    limit: 10,
+  });
+  const attention = buildOperatorAttentionReport({
+    flows: [],
+    permissionRecords: [],
+    events: [],
+    replays: [],
+    recoveryRuns: [],
+    limit: 10,
+  });
+  const report = buildOperatorTriageReport({
+    summary,
+    attention,
+    runtime: {
+      totalChains: 0,
+      activeCount: 0,
+      waitingCount: 0,
+      failedCount: 0,
+      resolvedCount: 0,
+      staleCount: 0,
+      attentionCount: 0,
+      stateCounts: {},
+      continuityCounts: {},
+      caseStateCounts: {},
+      attentionChains: [],
+      activeChains: [],
+      waitingChains: [],
+      staleChains: [],
+      failedChains: [],
+      recentlyResolved: [],
+      workerSessionHealth: {
+        totalSessions: 3,
+        activeSessions: 2,
+        orphanedSessions: 1,
+        missingContextSessions: 1,
+      },
+    },
+    limit: 5,
+  });
+
+  const driftFocus = report.focusAreas.find((area) => area.label === "worker-session-drift");
+  assert.equal(report.workerSessionOrphanCount, 1);
+  assert.equal(report.workerSessionMissingContextCount, 1);
+  assert.equal(driftFocus?.severity, "critical");
+  assert.equal(driftFocus?.commandHint, "runtime-summary 10");
+});
+
 function buildPromptBoundary(input: {
   progressId: string;
   recordedAt: number;

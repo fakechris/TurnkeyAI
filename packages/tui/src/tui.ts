@@ -1598,6 +1598,9 @@ function printOperatorTriage(report: OperatorTriageReport): void {
     `  runtime waiting=${report.runtimeWaitingCount}  stale=${report.runtimeStaleCount}  failed=${report.runtimeFailedCount}`
   );
   console.log(
+    `  worker orphaned=${report.workerSessionOrphanCount}  missing_context=${report.workerSessionMissingContextCount}`
+  );
+  console.log(
     `  prompt reductions=${report.promptReductionCount}  prompt attention=${report.promptAttentionCount}`
   );
   if (report.recommendedEntryPoint) {
