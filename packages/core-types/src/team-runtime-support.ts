@@ -555,6 +555,7 @@ export interface WorkerRuntime {
   getState(workerRunKey: RunKey): Promise<WorkerSessionState | null>;
   maybeRunForRole(input: WorkerInvocationInput): Promise<WorkerExecutionResult | null>;
   reconcileStartup?(): Promise<WorkerStartupReconcileResult>;
+  listSessions?(): Promise<WorkerSessionRecord[]>;
 }
 
 export interface WorkerSessionStore {

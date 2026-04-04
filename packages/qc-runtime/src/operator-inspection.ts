@@ -290,6 +290,9 @@ export function buildOperatorSummaryReport(input: {
     ...(input.runtimeSummary?.workerStartupReconcile
       ? { workerStartupReconcile: input.runtimeSummary.workerStartupReconcile }
       : {}),
+    ...(input.runtimeSummary?.workerSessionHealth
+      ? { workerSessionHealth: input.runtimeSummary.workerSessionHealth }
+      : {}),
     promptAttentionCount,
     totalAttentionCount:
       flow.attentionCount + replay.attentionCount + governance.attentionCount + recovery.attentionCount + promptAttentionCount,

@@ -5,6 +5,7 @@ import type {
   RuntimeChainCanonicalState,
   RuntimeChainStatus,
   RuntimeSummaryReport,
+  WorkerSessionRecord,
   WorkerRuntime,
   WorkerSessionState,
 } from "@turnkeyai/core-types/team";
@@ -35,6 +36,10 @@ type RecoveryRuntimeSnapshot = {
   report: ReturnType<typeof import("@turnkeyai/qc-runtime/replay-inspection").buildReplayInspectionReport>;
   runs: Awaited<ReturnType<FileRecoveryRunStore["listByThread"]>>;
 };
+
+function isTerminalWorkerStatus(record: WorkerSessionRecord): boolean {
+  return ["done", "failed", "cancelled"].includes(record.state.status);
+}
 
 export interface RuntimeQueryService {
   listRuntimeChainEntriesByThread(threadId: string, limit: number): Promise<RuntimeChainEntry[]>;
@@ -102,6 +107,45 @@ export function createRuntimeQueryService(input: {
       workerRunKeys.map(async (workerRunKey) => [workerRunKey, await workerRuntime.getState(workerRunKey)] as const)
     );
     return new Map(states.filter((entry): entry is readonly [string, WorkerSessionState] => Boolean(entry[1])));
+  }
+
+  async function buildWorkerSessionHealth(threadId?: string | null): Promise<RuntimeSummaryReport["workerSessionHealth"] | undefined> {
+    if (!workerRuntime.listSessions) {
+      return undefined;
+    }
+    const [sessions, scopedRoleRuns] = await Promise.all([
+      workerRuntime.listSessions(),
+      threadId ? roleRunStore.listByThread(threadId) : listAllRoleRuns(),
+    ]);
+    const scopedSessions = sessions.filter((record) => {
+      if (!threadId) {
+        return true;
+      }
+      return record.context?.threadId === threadId;
+    });
+    const boundWorkerRunKeys = new Set(
+      scopedRoleRuns.flatMap((run) =>
+        Object.values(run.workerSessions ?? {}).filter((workerRunKey): workerRunKey is string => Boolean(workerRunKey))
+      )
+    );
+    const activeSessions = scopedSessions.filter((record) => !isTerminalWorkerStatus(record)).length;
+    const orphanedSessions = scopedSessions.filter(
+      (record) => !isTerminalWorkerStatus(record) && record.context?.threadId && !boundWorkerRunKeys.has(record.workerRunKey)
+    ).length;
+    const missingContextSessions = scopedSessions.filter(
+      (record) => !isTerminalWorkerStatus(record) && !record.context?.threadId
+    ).length;
+    return {
+      totalSessions: scopedSessions.length,
+      activeSessions,
+      orphanedSessions,
+      missingContextSessions,
+    };
+  }
+
+  async function listAllRoleRuns(): Promise<RoleRunState[]> {
+    const threads = await teamThreadStore.list();
+    return (await Promise.all(threads.map((thread) => roleRunStore.listByThread(thread.threadId)))).flat();
   }
 
   function buildFallbackRuntimeChainStatus(chain: {
@@ -235,8 +279,12 @@ export function createRuntimeQueryService(input: {
     },
 
     async loadRuntimeSummary(threadId: string | null, limit: number): Promise<RuntimeSummaryReport> {
+      const [entries, workerSessionHealth] = await Promise.all([
+        loadRuntimeChainEntriesForScope(threadId),
+        buildWorkerSessionHealth(threadId),
+      ]);
       const report = buildRuntimeSummaryReport({
-        entries: await loadRuntimeChainEntriesForScope(threadId),
+        entries,
         limit,
         now: clock.now(),
       });
@@ -245,8 +293,14 @@ export function createRuntimeQueryService(input: {
         ? {
             ...report,
             workerStartupReconcile,
+            ...(workerSessionHealth ? { workerSessionHealth } : {}),
           }
-        : report;
+        : workerSessionHealth
+          ? {
+              ...report,
+              workerSessionHealth,
+            }
+          : report;
     },
 
     async listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]> {

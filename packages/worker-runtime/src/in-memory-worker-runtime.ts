@@ -442,6 +442,18 @@ export class InMemoryWorkerRuntime implements WorkerRuntime {
     return this.startupReconcileResult;
   }
 
+  async listSessions(): Promise<WorkerSessionRecord[]> {
+    await this.ensureHydrated();
+    return [...this.sessions.entries()]
+      .map(([workerRunKey, entry]) => ({
+        workerRunKey,
+        state: entry.state,
+        executionToken: entry.executionToken,
+        ...(entry.context ? { context: entry.context } : {}),
+      }))
+      .sort((left, right) => right.state.updatedAt - left.state.updatedAt);
+  }
+
   private shouldCommitCompletion(workerRunKey: string, executionToken: number): boolean {
     const current = this.sessions.get(workerRunKey);
     return Boolean(current && current.executionToken === executionToken);

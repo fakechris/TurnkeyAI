@@ -544,6 +544,7 @@ export interface OperatorSummaryReport {
   recovery: RecoveryConsoleReport;
   prompt: PromptConsoleReport;
   workerStartupReconcile?: RuntimeSummaryReport["workerStartupReconcile"];
+  workerSessionHealth?: RuntimeSummaryReport["workerSessionHealth"];
   promptAttentionCount: number;
   totalAttentionCount: number;
   attentionOverview?: {

@@ -981,6 +981,11 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
       `  worker startup reconcile: total=${report.workerStartupReconcile.totalSessions} downgraded-running=${report.workerStartupReconcile.downgradedRunningSessions}`
     );
   }
+  if (report.workerSessionHealth) {
+    console.log(
+      `  worker sessions: total=${report.workerSessionHealth.totalSessions} active=${report.workerSessionHealth.activeSessions} orphaned=${report.workerSessionHealth.orphanedSessions} missing-context=${report.workerSessionHealth.missingContextSessions}`
+    );
+  }
   printRuntimeSummaryEntries("  attention chains:", report.attentionChains);
   printRuntimeSummaryEntries("  active chains:", report.activeChains);
   printRuntimeSummaryEntries("  waiting chains:", report.waitingChains);
@@ -1381,6 +1386,11 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   if (report.workerStartupReconcile) {
     console.log(
       `  worker startup reconcile: total=${report.workerStartupReconcile.totalSessions} downgraded-running=${report.workerStartupReconcile.downgradedRunningSessions}`
+    );
+  }
+  if (report.workerSessionHealth) {
+    console.log(
+      `  worker sessions: total=${report.workerSessionHealth.totalSessions} active=${report.workerSessionHealth.activeSessions} orphaned=${report.workerSessionHealth.orphanedSessions} missing-context=${report.workerSessionHealth.missingContextSessions}`
     );
   }
   console.log(

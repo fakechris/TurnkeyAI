@@ -277,6 +277,12 @@ export interface RuntimeSummaryReport {
     totalSessions: number;
     downgradedRunningSessions: number;
   };
+  workerSessionHealth?: {
+    totalSessions: number;
+    activeSessions: number;
+    orphanedSessions: number;
+    missingContextSessions: number;
+  };
 }
 
 export interface RuntimeProgressEvent {
