@@ -2,8 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ReleaseReadinessResult } from "./release-readiness";
-import type { ValidationRunResult } from "./validation-suite";
-import type { ValidationSoakSeriesResult } from "./validation-soak-series";
+import type { ValidationRunResult, ValidationSuiteId } from "./validation-suite";
 import {
   isValidationProfileId,
   listValidationProfiles,
@@ -34,7 +33,7 @@ test("validation profile id guard accepts known profiles", () => {
 
 test("smoke validation profile only runs validation catalog stage", async () => {
   let releaseCalls = 0;
-  let soakCalls = 0;
+  const validationCalls: string[][] = [];
   const result = await runValidationProfile(
     "smoke",
     {},
@@ -43,10 +42,9 @@ test("smoke validation profile only runs validation catalog stage", async () => 
         releaseCalls += 1;
         return makeReleaseReadinessResult();
       },
-      validationRunner: () => makeValidationRunResult(),
-      soakSeriesRunner: () => {
-        soakCalls += 1;
-        return makeValidationSoakSeriesResult();
+      validationRunner: (selectors) => {
+        validationCalls.push([...(selectors ?? [])]);
+        return makeSuiteScopedValidationRunResult(selectors);
       },
     }
   );
@@ -55,12 +53,17 @@ test("smoke validation profile only runs validation catalog stage", async () => 
   assert.equal(result.totalStages, 1);
   assert.equal(result.stages[0]?.stageId, "validation-run");
   assert.equal(releaseCalls, 0);
-  assert.equal(soakCalls, 0);
+  assert.deepEqual(validationCalls, [
+    ["regression:browser-recovery-cold-reopen-outcome", "regression:runtime-prompt-console-summarizes-boundaries", "regression:governance-publish-readback-verifies-closure"],
+    ["acceptance:browser-ownership-reclaim-isolation"],
+    ["realworld:browser-research-recovery-runbook", "realworld:governed-publish-readback-verification"],
+  ]);
   assert.match(summarizeValidationProfileResult(result), /stages=1\/1/);
-  assert.match(summarizeValidationStage(result.stages[0]!), /suites=1\/1/);
+  assert.match(summarizeValidationStage(result.stages[0]!), /suites=3\/3/);
 });
 
 test("nightly validation profile aggregates validation, release, and soak failures", async () => {
+  let validationStageCalls = 0;
   const result = await runValidationProfile(
     "nightly",
     {},
@@ -75,62 +78,18 @@ test("nightly validation profile aggregates validation, release, and soak failur
             { checkId: "publish-dry-run", title: "Publish dry-run", status: "failed", details: ["dry-run failed"] },
           ],
         }),
-      validationRunner: () =>
-        makeValidationRunResult({
-          failedSuites: 1,
-          passedSuites: 1,
-          failedItems: 1,
-          passedItems: 1,
-          failedCases: 1,
-          passedCases: 3,
-          suites: [
-            {
-              suiteId: "acceptance",
-              title: "Acceptance",
-              summary: "acceptance",
-              totalItems: 1,
-              passedItems: 0,
-              failedItems: 1,
-              totalCases: 2,
-              passedCases: 1,
-              failedCases: 1,
-              items: [
-                {
-                  suiteId: "acceptance",
-                  itemId: "browser-ownership-reclaim-isolation",
-                  area: "browser",
-                  title: "Ownership reclaim",
-                  summary: "summary",
-                  status: "failed",
-                  totalCases: 2,
-                  passedCases: 1,
-                  failedCases: 1,
-                  caseResults: [],
-                },
-              ],
-            },
-          ],
-        }),
-      soakSeriesRunner: () =>
-        makeValidationSoakSeriesResult({
-          status: "failed",
-          totalCycles: 3,
-          passedCycles: 2,
-          failedCycles: 1,
-          totalCases: 30,
-          failedCases: 2,
-          suiteAggregates: [
-            {
-              suiteId: "soak",
-              cycles: 3,
-              failedCycles: 1,
-              totalItems: 9,
-              failedItems: 1,
-              totalCases: 30,
-              failedCases: 2,
-            },
-          ],
-        }),
+      validationRunner: (selectors) => {
+        const suiteId = getSuiteIdFromSelectors(selectors);
+        if (validationStageCalls < 4 && suiteId === "acceptance") {
+          validationStageCalls += 1;
+          return makeSuiteScopedValidationRunResult(selectors, { suiteId, failed: true });
+        }
+        validationStageCalls += 1;
+        if (suiteId === "soak" && validationStageCalls > 4) {
+          return makeSuiteScopedValidationRunResult(selectors, { suiteId, failed: true });
+        }
+        return makeSuiteScopedValidationRunResult(selectors, { suiteId });
+      },
     }
   );
 
@@ -142,47 +101,66 @@ test("nightly validation profile aggregates validation, release, and soak failur
   assert.ok(result.issues.some((issue) => issue.kind === "soak-suite" && issue.scope === "soak"));
 });
 
-function makeValidationRunResult(
-  overrides: Partial<ValidationRunResult> = {}
+function makeSuiteScopedValidationRunResult(
+  selectors?: string[],
+  options: {
+    suiteId?: ValidationSuiteId;
+    failed?: boolean;
+  } = {}
 ): ValidationRunResult {
+  const suiteId = options.suiteId ?? getSuiteIdFromSelectors(selectors);
+  const failed = options.failed ?? false;
+  const itemId = suiteId === "acceptance"
+    ? "browser-ownership-reclaim-isolation"
+    : suiteId === "realworld"
+      ? "browser-research-recovery-runbook"
+      : `${suiteId}-sample`;
+  const itemTitle = suiteId === "acceptance" ? "Ownership reclaim" : `${suiteId} scenario`;
+  const area = suiteId === "acceptance" || suiteId === "realworld" ? "browser" : suiteId;
+  const totalCases = failed ? 2 : 2;
+  const failedCases = failed ? 1 : 0;
+  const passedCases = totalCases - failedCases;
+  const totalItems = 1;
+  const failedItems = failed ? 1 : 0;
+  const passedItems = totalItems - failedItems;
+
   return {
     totalSuites: 1,
-    passedSuites: 1,
-    failedSuites: 0,
-    totalItems: 1,
-    passedItems: 1,
-    failedItems: 0,
-    totalCases: 2,
-    passedCases: 2,
-    failedCases: 0,
+    passedSuites: failed ? 0 : 1,
+    failedSuites: failed ? 1 : 0,
+    totalItems,
+    passedItems,
+    failedItems,
+    totalCases,
+    passedCases,
+    failedCases,
     suites: [
       {
-        suiteId: "realworld",
-        title: "Realworld",
-        summary: "realworld",
-        totalItems: 1,
-        passedItems: 1,
-        failedItems: 0,
-        totalCases: 2,
-        passedCases: 2,
-        failedCases: 0,
+        suiteId,
+        title: suiteId[0]!.toUpperCase() + suiteId.slice(1),
+        summary: suiteId,
+        totalItems,
+        passedItems,
+        failedItems,
+        totalCases,
+        passedCases,
+        failedCases,
         items: [
           {
-            suiteId: "realworld",
-            itemId: "browser-research-recovery-runbook",
-            area: "browser",
-            title: "Browser research",
+            suiteId,
+            itemId,
+            area,
+            title: itemTitle,
             summary: "summary",
-            status: "passed",
-            totalCases: 2,
-            passedCases: 2,
-            failedCases: 0,
+            status: failed ? "failed" : "passed",
+            totalCases,
+            passedCases,
+            failedCases,
             caseResults: [],
           },
         ],
       },
     ],
-    ...overrides,
   };
 }
 
@@ -206,34 +184,17 @@ function makeReleaseReadinessResult(
   };
 }
 
-function makeValidationSoakSeriesResult(
-  overrides: Partial<ValidationSoakSeriesResult> = {}
-): ValidationSoakSeriesResult {
-  return {
-    status: "passed",
-    selectors: ["soak", "realworld", "acceptance"],
-    totalCycles: 3,
-    passedCycles: 3,
-    failedCycles: 0,
-    totalSuites: 9,
-    failedSuites: 0,
-    totalItems: 18,
-    failedItems: 0,
-    totalCases: 30,
-    failedCases: 0,
-    durationMs: 12,
-    cycles: [],
-    suiteAggregates: [
-      {
-        suiteId: "soak",
-        cycles: 3,
-        failedCycles: 0,
-        totalItems: 9,
-        failedItems: 0,
-        totalCases: 30,
-        failedCases: 0,
-      },
-    ],
-    ...overrides,
-  };
+function getSuiteIdFromSelectors(selectors?: string[]): ValidationSuiteId {
+  const firstSelector = selectors?.[0];
+  const prefix = firstSelector?.split(":", 1)[0];
+  switch (prefix) {
+    case "regression":
+    case "soak":
+    case "failure":
+    case "acceptance":
+    case "realworld":
+      return prefix;
+    default:
+      return "realworld";
+  }
 }

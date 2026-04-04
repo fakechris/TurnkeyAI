@@ -4,6 +4,7 @@ import type {
 } from "./release-readiness";
 import { runReleaseReadiness } from "./release-readiness";
 import type {
+  ValidationSuiteId,
   ValidationRunResult,
 } from "./validation-suite";
 import { runValidationSuites } from "./validation-suite";
@@ -11,7 +12,6 @@ import type {
   ValidationSoakSeriesOptions,
   ValidationSoakSeriesResult,
 } from "./validation-soak-series";
-import { runValidationSoakSeries } from "./validation-soak-series";
 
 export type ValidationProfileId = "smoke" | "nightly" | "prerelease" | "weekly";
 export type ValidationProfileStageId = "validation-run" | "release-readiness" | "soak-series";
@@ -86,10 +86,16 @@ export interface ValidationProfileRunOptions {
 interface ValidationProfileDeps {
   releaseReadinessRunner: (options?: ReleaseReadinessOptions) => Promise<ReleaseReadinessResult>;
   validationRunner: (selectors?: string[]) => ValidationRunResult;
-  soakSeriesRunner: (options?: ValidationSoakSeriesOptions) => ValidationSoakSeriesResult;
 }
 
 const DEFAULT_SOAK_PROFILE_SELECTORS = ["soak", "realworld", "acceptance"] as const;
+const VALIDATION_SUITE_ORDER: ValidationSuiteId[] = [
+  "regression",
+  "soak",
+  "failure",
+  "acceptance",
+  "realworld",
+];
 
 const PROFILE_DESCRIPTORS: Record<ValidationProfileId, ValidationProfileDescriptor> = {
   smoke: {
@@ -146,7 +152,6 @@ const PROFILE_DESCRIPTORS: Record<ValidationProfileId, ValidationProfileDescript
 const DEFAULT_DEPS: ValidationProfileDeps = {
   releaseReadinessRunner: runReleaseReadiness,
   validationRunner: runValidationSuites,
-  soakSeriesRunner: runValidationSoakSeries,
 };
 
 export function listValidationProfiles(): ValidationProfileDescriptor[] {
@@ -161,7 +166,7 @@ export function listValidationProfiles(): ValidationProfileDescriptor[] {
 }
 
 export function isValidationProfileId(value: string): value is ValidationProfileId {
-  return value === "smoke" || value === "nightly" || value === "prerelease" || value === "weekly";
+  return value in PROFILE_DESCRIPTORS;
 }
 
 export async function runValidationProfile(
@@ -174,7 +179,10 @@ export async function runValidationProfile(
   const stages: ValidationProfileStageResult[] = [];
 
   const validationStartedAt = Date.now();
-  const validationResult = deps.validationRunner(profile.validationSelectors);
+  const validationResult = await runValidationSuitesNonBlocking({
+    validationRunner: deps.validationRunner,
+    selectors: profile.validationSelectors,
+  });
   stages.push({
     stageId: "validation-run",
     title: "Validation catalog run",
@@ -199,7 +207,8 @@ export async function runValidationProfile(
   if (profile.soakSeriesCycles && profile.soakSeriesCycles > 0) {
     const soakStartedAt = Date.now();
     const soakSelectors = profile.soakSeriesSelectors ?? [...DEFAULT_SOAK_PROFILE_SELECTORS];
-    const soakResult = deps.soakSeriesRunner({
+    const soakResult = await runValidationSoakSeriesNonBlocking({
+      validationRunner: deps.validationRunner,
       ...options.soakSeries,
       cycles: profile.soakSeriesCycles,
       selectors: soakSelectors,
@@ -284,6 +293,160 @@ function collectProfileIssues(stages: ValidationProfileStageResult[]): Validatio
   }
 
   return issues;
+}
+
+async function runValidationSoakSeriesNonBlocking(
+  options: ValidationSoakSeriesOptions & {
+    validationRunner: (selectors?: string[]) => ValidationRunResult;
+  }
+): Promise<ValidationSoakSeriesResult> {
+  const selectedCycles = normalizeCycleCount(options.cycles);
+  const normalizedSelectors = normalizeSelectors(options.selectors);
+  const selectors = normalizedSelectors.length > 0 ? normalizedSelectors : [...DEFAULT_SOAK_PROFILE_SELECTORS];
+  const startedAt = Date.now();
+  const cycleResults: ValidationSoakSeriesResult["cycles"] = [];
+
+  for (let cycleNumber = 1; cycleNumber <= selectedCycles; cycleNumber += 1) {
+    await yieldToEventLoop();
+    const cycleStartedAt = Date.now();
+    const run = await runValidationSuitesNonBlocking({
+      validationRunner: options.validationRunner,
+      selectors,
+    });
+    cycleResults.push({
+      cycleNumber,
+      status: run.failedSuites === 0 ? "passed" : "failed",
+      durationMs: Date.now() - cycleStartedAt,
+      totalSuites: run.totalSuites,
+      failedSuites: run.failedSuites,
+      totalItems: run.totalItems,
+      failedItems: run.failedItems,
+      totalCases: run.totalCases,
+      failedCases: run.failedCases,
+      suites: run.suites.map((suite) => ({
+        suiteId: suite.suiteId,
+        status: suite.failedItems === 0 ? "passed" : "failed",
+        totalItems: suite.totalItems,
+        failedItems: suite.failedItems,
+        totalCases: suite.totalCases,
+        failedCases: suite.failedCases,
+      })),
+    });
+  }
+
+  const suiteAggregateMap = new Map<ValidationSuiteId, ValidationSoakSeriesResult["suiteAggregates"][number]>();
+  for (const cycle of cycleResults) {
+    for (const suite of cycle.suites) {
+      const aggregate = suiteAggregateMap.get(suite.suiteId) ?? {
+        suiteId: suite.suiteId,
+        cycles: 0,
+        failedCycles: 0,
+        totalItems: 0,
+        failedItems: 0,
+        totalCases: 0,
+        failedCases: 0,
+      };
+      aggregate.cycles += 1;
+      aggregate.failedCycles += suite.status === "failed" ? 1 : 0;
+      aggregate.totalItems += suite.totalItems;
+      aggregate.failedItems += suite.failedItems;
+      aggregate.totalCases += suite.totalCases;
+      aggregate.failedCases += suite.failedCases;
+      suiteAggregateMap.set(suite.suiteId, aggregate);
+    }
+  }
+
+  return {
+    status: cycleResults.every((cycle) => cycle.status === "passed") ? "passed" : "failed",
+    selectors,
+    totalCycles: cycleResults.length,
+    passedCycles: cycleResults.filter((cycle) => cycle.status === "passed").length,
+    failedCycles: cycleResults.filter((cycle) => cycle.status === "failed").length,
+    totalSuites: cycleResults.reduce((sum, cycle) => sum + cycle.totalSuites, 0),
+    failedSuites: cycleResults.reduce((sum, cycle) => sum + cycle.failedSuites, 0),
+    totalItems: cycleResults.reduce((sum, cycle) => sum + cycle.totalItems, 0),
+    failedItems: cycleResults.reduce((sum, cycle) => sum + cycle.failedItems, 0),
+    totalCases: cycleResults.reduce((sum, cycle) => sum + cycle.totalCases, 0),
+    failedCases: cycleResults.reduce((sum, cycle) => sum + cycle.failedCases, 0),
+    durationMs: Date.now() - startedAt,
+    cycles: cycleResults,
+    suiteAggregates: [...suiteAggregateMap.values()],
+  };
+}
+
+async function runValidationSuitesNonBlocking(options: {
+  selectors?: string[];
+  validationRunner: (selectors?: string[]) => ValidationRunResult;
+}): Promise<ValidationRunResult> {
+  const selectors = normalizeSelectors(options.selectors);
+  const selectorGroups = selectors.length > 0
+    ? buildSuiteScopedSelectors(selectors)
+    : VALIDATION_SUITE_ORDER.map((suiteId) => ({ suiteId, selectors: [suiteId] }));
+  const suiteRuns: ValidationRunResult[] = [];
+
+  for (const group of selectorGroups) {
+    await yieldToEventLoop();
+    suiteRuns.push(options.validationRunner(group.selectors));
+  }
+
+  const suites = suiteRuns.flatMap((run) => run.suites);
+  return {
+    totalSuites: suites.length,
+    passedSuites: suites.filter((suite) => suite.failedItems === 0).length,
+    failedSuites: suites.filter((suite) => suite.failedItems > 0).length,
+    totalItems: suites.reduce((sum, suite) => sum + suite.totalItems, 0),
+    passedItems: suites.reduce((sum, suite) => sum + (suite.totalItems - suite.failedItems), 0),
+    failedItems: suites.reduce((sum, suite) => sum + suite.failedItems, 0),
+    totalCases: suites.reduce((sum, suite) => sum + suite.totalCases, 0),
+    passedCases: suites.reduce((sum, suite) => sum + (suite.totalCases - suite.failedCases), 0),
+    failedCases: suites.reduce((sum, suite) => sum + suite.failedCases, 0),
+    suites,
+  };
+}
+
+function buildSuiteScopedSelectors(
+  selectors: string[]
+): Array<{ suiteId: ValidationSuiteId; selectors: string[] }> {
+  const groups = new Map<ValidationSuiteId, string[]>();
+
+  for (const selector of selectors) {
+    const suiteId = getValidationSelectorSuiteId(selector);
+    if (!suiteId) {
+      continue;
+    }
+    const entries = groups.get(suiteId) ?? [];
+    entries.push(selector);
+    groups.set(suiteId, entries);
+  }
+
+  return VALIDATION_SUITE_ORDER
+    .filter((suiteId) => groups.has(suiteId))
+    .map((suiteId) => ({
+      suiteId,
+      selectors: groups.get(suiteId)!,
+    }));
+}
+
+function getValidationSelectorSuiteId(selector: string): ValidationSuiteId | undefined {
+  const [prefix] = selector.split(":", 1);
+  return VALIDATION_SUITE_ORDER.find((suiteId) => suiteId === prefix);
+}
+
+function normalizeSelectors(selectors?: string[]): string[] {
+  return selectors?.map((selector) => selector.trim()).filter((selector) => selector.length > 0) ?? [];
+}
+
+function normalizeCycleCount(value?: number): number {
+  if (!Number.isFinite(value)) {
+    return 5;
+  }
+  return Math.max(1, Math.floor(value!));
+}
+
+async function yieldToEventLoop(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 export function summarizeValidationStage(

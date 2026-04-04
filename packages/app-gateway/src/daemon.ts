@@ -1142,7 +1142,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/validation-profiles/run") {
       const body = await readJsonBody<{ profileId?: string }>(req);
-      const profileId = body.profileId?.trim();
+      const profileId = typeof body.profileId === "string" ? body.profileId.trim() : undefined;
       if (!profileId || !isValidationProfileId(profileId)) {
         return sendJson(res, 400, { error: "Unknown validation profile" });
       }
