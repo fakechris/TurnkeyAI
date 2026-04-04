@@ -6,6 +6,7 @@ import type {
   BrowserContinuationHint,
   BrowserSessionOwnerType,
   BrowserTaskAction,
+  BrowserTaskResult,
   BrowserTaskRequest,
   WorkerRuntime,
   Clock,
@@ -34,7 +35,11 @@ import {
 } from "@turnkeyai/core-types/team";
 import { KeyedAsyncMutex } from "@turnkeyai/core-types/async-mutex";
 import { decodeBrowserSessionPayload } from "@turnkeyai/core-types/browser-session-payload";
-import { LocalChromeBrowserBridge } from "@turnkeyai/browser-bridge/local-chrome-browser-bridge";
+import {
+  createBrowserBridge,
+  resolveBrowserTransportMode,
+} from "@turnkeyai/browser-bridge/browser-bridge-factory";
+import { maybeGetRelayGateway } from "@turnkeyai/browser-bridge/transport/relay-adapter";
 import { AnthropicCompatibleClient } from "@turnkeyai/llm-adapter/anthropic-compatible-client";
 import { FileModelCatalogSource } from "@turnkeyai/llm-adapter/file-model-catalog";
 import { LLMGateway } from "@turnkeyai/llm-adapter/gateway";
@@ -334,10 +339,35 @@ const contextStateMaintainer = new DefaultContextStateMaintainer({
   runtimeProgressRecorder,
   sessionMemoryRefreshDelayMs: 10,
 });
-const browserBridge = new LocalChromeBrowserBridge({
+const browserBridge = createBrowserBridge({
   artifactRootDir: path.join(DATA_DIR, "browser-artifacts"),
   stateRootDir: path.join(DATA_DIR, "browser-state"),
+  ...(process.env.TURNKEYAI_BROWSER_TRANSPORT?.trim()
+    ? { transportMode: resolveBrowserTransportMode(process.env.TURNKEYAI_BROWSER_TRANSPORT.trim()) }
+    : {}),
+  relay: {
+    ...(process.env.TURNKEYAI_BROWSER_RELAY_ENDPOINT?.trim()
+      ? { endpoint: process.env.TURNKEYAI_BROWSER_RELAY_ENDPOINT.trim() }
+      : {}),
+    ...(process.env.TURNKEYAI_BROWSER_RELAY_PEER_ID?.trim()
+      ? { relayPeerId: process.env.TURNKEYAI_BROWSER_RELAY_PEER_ID.trim() }
+      : {}),
+  },
+  directCdp: {
+    ...(process.env.TURNKEYAI_BROWSER_CDP_ENDPOINT?.trim()
+      ? { endpoint: process.env.TURNKEYAI_BROWSER_CDP_ENDPOINT.trim() }
+      : {}),
+  },
 });
+const relayGateway = maybeGetRelayGateway(browserBridge);
+function getRelayDiagnosticsSnapshot() {
+  return relayGateway
+    ? {
+        peers: relayGateway.listPeers(),
+        targets: relayGateway.listTargets(),
+      }
+    : undefined;
+}
 const replayRecorder = new FileReplayRecorder({
   rootDir: path.join(DATA_DIR, "replays"),
 });
@@ -811,18 +841,30 @@ const server = http.createServer(async (req, res) => {
         loadRecoveryRuntime(threadId),
         runtimeProgressStore.listByThread(threadId),
       ]);
+      const relayDiagnostics = getRelayDiagnosticsSnapshot();
       return sendJson(
         res,
         200,
-        buildOperatorSummaryReport({
-          flows,
-          permissionRecords,
-          events,
-          replays: synced.records,
-          recoveryRuns: synced.runs,
-          progressEvents,
-          limit,
-        })
+        relayDiagnostics
+          ? buildOperatorSummaryReport({
+              flows,
+              permissionRecords,
+              events,
+              replays: synced.records,
+              recoveryRuns: synced.runs,
+              progressEvents,
+              relayDiagnostics,
+              limit,
+            })
+          : buildOperatorSummaryReport({
+              flows,
+              permissionRecords,
+              events,
+              replays: synced.records,
+              recoveryRuns: synced.runs,
+              progressEvents,
+              limit,
+            })
       );
     }
 
@@ -842,18 +884,30 @@ const server = http.createServer(async (req, res) => {
         loadRecoveryRuntime(threadId),
         runtimeProgressStore.listByThread(threadId),
       ]);
+      const relayDiagnostics = getRelayDiagnosticsSnapshot();
       return sendJson(
         res,
         200,
-        buildOperatorAttentionReport({
-          flows,
-          permissionRecords,
-          events,
-          replays: synced.records,
-          recoveryRuns: synced.runs,
-          progressEvents,
-          limit,
-        })
+        relayDiagnostics
+          ? buildOperatorAttentionReport({
+              flows,
+              permissionRecords,
+              events,
+              replays: synced.records,
+              recoveryRuns: synced.runs,
+              progressEvents,
+              relayDiagnostics,
+              limit,
+            })
+          : buildOperatorAttentionReport({
+              flows,
+              permissionRecords,
+              events,
+              replays: synced.records,
+              recoveryRuns: synced.runs,
+              progressEvents,
+              limit,
+            })
       );
     }
 
@@ -874,24 +928,47 @@ const server = http.createServer(async (req, res) => {
         runtimeProgressStore.listByThread(threadId),
         loadRuntimeSummary(threadId, Math.max(limit, 10)),
       ]);
-      const operatorSummary = buildOperatorSummaryReport({
-        flows,
-        permissionRecords,
-        events,
-        replays: synced.records,
-        recoveryRuns: synced.runs,
-        progressEvents,
-        limit,
-      });
-      const operatorAttention = buildOperatorAttentionReport({
-        flows,
-        permissionRecords,
-        events,
-        replays: synced.records,
-        recoveryRuns: synced.runs,
-        progressEvents,
-        limit: Math.max(limit, 10),
-      });
+      const relayDiagnostics = getRelayDiagnosticsSnapshot();
+      const operatorSummary = relayDiagnostics
+        ? buildOperatorSummaryReport({
+            flows,
+            permissionRecords,
+            events,
+            replays: synced.records,
+            recoveryRuns: synced.runs,
+            progressEvents,
+            relayDiagnostics,
+            limit,
+          })
+        : buildOperatorSummaryReport({
+            flows,
+            permissionRecords,
+            events,
+            replays: synced.records,
+            recoveryRuns: synced.runs,
+            progressEvents,
+            limit,
+          });
+      const operatorAttention = relayDiagnostics
+        ? buildOperatorAttentionReport({
+            flows,
+            permissionRecords,
+            events,
+            replays: synced.records,
+            recoveryRuns: synced.runs,
+            progressEvents,
+            relayDiagnostics,
+            limit: Math.max(limit, 10),
+          })
+        : buildOperatorAttentionReport({
+            flows,
+            permissionRecords,
+            events,
+            replays: synced.records,
+            recoveryRuns: synced.runs,
+            progressEvents,
+            limit: Math.max(limit, 10),
+          });
       return sendJson(
         res,
         200,
@@ -984,7 +1061,7 @@ const server = http.createServer(async (req, res) => {
       }
       if (threadId) {
         const synced = await loadRecoveryRuntime(threadId);
-        return sendJson(res, 200, buildReplayConsoleReport(synced.records, limit, synced.runs));
+        return sendJson(res, 200, buildReplayConsoleReport(synced.records, limit, synced.runs, getRelayDiagnosticsSnapshot()));
       }
       return sendJson(
         res,
@@ -993,7 +1070,9 @@ const server = http.createServer(async (req, res) => {
           await replayRecorder.list({
             limit: Math.max(limit, 200),
           }),
-          limit
+          limit,
+          [],
+          getRelayDiagnosticsSnapshot()
         )
       );
     }
@@ -1256,7 +1335,11 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, 400, { error: "threadId is required" });
       }
       const synced = await loadRecoveryRuntime(threadId);
-      const bundle = buildReplayIncidentBundle(synced.records, decodeURIComponent(replayBundleMatch[1]!));
+      const bundle = buildReplayIncidentBundle(
+        synced.records,
+        decodeURIComponent(replayBundleMatch[1]!),
+        getRelayDiagnosticsSnapshot()
+      );
       if (!bundle) {
         return sendJson(res, 404, { error: "replay bundle not found" });
       }
@@ -1610,6 +1693,173 @@ const server = http.createServer(async (req, res) => {
         await browserBridge.evictIdleSessions({
           idleBefore,
           ...(body.reason ? { reason: body.reason } : {}),
+        })
+      );
+    }
+
+    if (req.method === "GET" && url.pathname === "/relay/peers") {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      return sendJson(res, 200, relayGateway.listPeers());
+    }
+
+    if (req.method === "POST" && url.pathname === "/relay/peers/register") {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const body = await readJsonBody<{
+        peerId?: string;
+        label?: string;
+        capabilities?: string[];
+        transportLabel?: string;
+      }>(req);
+      if (!body.peerId?.trim()) {
+        return sendJson(res, 400, { error: "peerId is required" });
+      }
+      return sendJson(
+        res,
+        201,
+        relayGateway.registerPeer({
+          peerId: body.peerId,
+          ...(body.label?.trim() ? { label: body.label.trim() } : {}),
+          ...(Array.isArray(body.capabilities) ? { capabilities: body.capabilities } : {}),
+          ...(body.transportLabel?.trim() ? { transportLabel: body.transportLabel.trim() } : {}),
+        })
+      );
+    }
+
+    const relayPeerHeartbeatMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/heartbeat$/);
+    if (req.method === "POST" && relayPeerHeartbeatMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      return sendJson(res, 200, relayGateway.heartbeatPeer(decodeURIComponent(relayPeerHeartbeatMatch[1]!)));
+    }
+
+    const relayPeerTargetsMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/targets\/report$/);
+    if (req.method === "POST" && relayPeerTargetsMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const body = await readJsonBody<{
+        targets?: Array<{
+          relayTargetId?: string;
+          url?: string;
+          title?: string;
+          status?: "open" | "attached" | "detached" | "closed";
+        }>;
+      }>(req);
+      if (!Array.isArray(body.targets)) {
+        return sendJson(res, 400, { error: "targets array is required" });
+      }
+      return sendJson(
+        res,
+        200,
+        relayGateway.reportTargets(
+          decodeURIComponent(relayPeerTargetsMatch[1]!),
+          body.targets.map((target) => ({
+            relayTargetId: target.relayTargetId?.trim() ?? "",
+            url: target.url ?? "",
+            ...(target.title ? { title: target.title } : {}),
+            ...(target.status ? { status: target.status } : {}),
+          }))
+        )
+      );
+    }
+
+    if (req.method === "GET" && url.pathname === "/relay/targets") {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const peerId = url.searchParams.get("peerId");
+      return sendJson(
+        res,
+        200,
+        relayGateway.listTargets(peerId?.trim() ? { peerId: peerId.trim() } : undefined)
+      );
+    }
+
+    const relayPeerPullActionsMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/pull-actions$/);
+    if (req.method === "POST" && relayPeerPullActionsMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      return sendJson(
+        res,
+        200,
+        relayGateway.pullNextActionRequest(decodeURIComponent(relayPeerPullActionsMatch[1]!))
+      );
+    }
+
+    const relayPeerActionResultsMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/action-results$/);
+    if (req.method === "POST" && relayPeerActionResultsMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const peerId = decodeURIComponent(relayPeerActionResultsMatch[1]!);
+      const body = await readJsonBody<{
+        actionRequestId?: string;
+        browserSessionId?: string;
+        taskId?: string;
+        relayTargetId?: string;
+        url?: string;
+        title?: string;
+        status?: "completed" | "failed";
+        page?: BrowserTaskResult["page"];
+        trace?: BrowserTaskResult["trace"];
+        screenshotPaths?: string[];
+        screenshotPayloads?: Array<{
+          label?: string;
+          mimeType?: string;
+          dataBase64?: string;
+        }>;
+        artifactIds?: string[];
+        errorMessage?: string;
+      }>(req);
+      if (!body.actionRequestId?.trim() || !body.browserSessionId?.trim() || !body.taskId?.trim() || !body.relayTargetId?.trim()) {
+        return sendJson(res, 400, {
+          error: "actionRequestId, browserSessionId, taskId, and relayTargetId are required",
+        });
+      }
+      if (!body.url?.trim()) {
+        return sendJson(res, 400, { error: "url is required" });
+      }
+      if (!body.status) {
+        return sendJson(res, 400, { error: "status is required" });
+      }
+      return sendJson(
+        res,
+        200,
+        relayGateway.submitActionResult({
+          actionRequestId: body.actionRequestId.trim(),
+          peerId,
+          browserSessionId: body.browserSessionId.trim(),
+          taskId: body.taskId.trim(),
+          relayTargetId: body.relayTargetId.trim(),
+          url: body.url.trim(),
+          ...(body.title ? { title: body.title } : {}),
+          status: body.status,
+          ...(body.page ? { page: body.page } : {}),
+          trace: Array.isArray(body.trace) ? body.trace : [],
+          screenshotPaths: Array.isArray(body.screenshotPaths) ? body.screenshotPaths : [],
+          screenshotPayloads: Array.isArray(body.screenshotPayloads)
+            ? body.screenshotPayloads
+                .filter(
+                  (payload): payload is { label?: string; mimeType: string; dataBase64: string } =>
+                    Boolean(payload) &&
+                    typeof payload === "object" &&
+                    typeof payload.mimeType === "string" &&
+                    typeof payload.dataBase64 === "string"
+                )
+                .map((payload) => ({
+                  ...(payload.label ? { label: payload.label } : {}),
+                  mimeType: payload.mimeType,
+                  dataBase64: payload.dataBase64,
+                }))
+            : [],
+          artifactIds: Array.isArray(body.artifactIds) ? body.artifactIds : [],
+          ...(body.errorMessage ? { errorMessage: body.errorMessage } : {}),
         })
       );
     }

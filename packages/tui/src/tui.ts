@@ -406,6 +406,16 @@ while (true) {
       continue;
     }
 
+    if (command === "relay-peers") {
+      await handleRelayPeersCommand();
+      continue;
+    }
+
+    if (command === "relay-targets") {
+      await handleRelayTargetsCommand(args);
+      continue;
+    }
+
     if (command === "governance") {
       await handleGovernanceCommand(args);
       continue;
@@ -663,6 +673,8 @@ function printHelp(): void {
   console.log("  browser activate <sessionId> <id>     activate a target");
   console.log("  browser close-target <sessionId> <id> close a target");
   console.log("  browser evict [minutes]               evict idle browser sessions");
+  console.log("  relay-peers                           list active/stale relay peers");
+  console.log("  relay-targets [peerId]                list relay-discovered targets");
   console.log("  governance permissions                show permission cache for current thread");
   console.log("  governance summary [limit]            show governance summary for current thread");
   console.log("  recovery-summary [limit]              show recovery summary for current thread");
@@ -722,6 +734,35 @@ async function postJson(pathname: string, body: unknown): Promise<any> {
   return parseJsonResponse(response);
 }
 
+async function handleRelayPeersCommand(): Promise<void> {
+  printRelayPeers(
+    (await getJson("/relay/peers")) as Array<{
+      peerId: string;
+      label?: string;
+      capabilities: string[];
+      transportLabel?: string;
+      registeredAt: number;
+      lastSeenAt: number;
+      status: "online" | "stale";
+    }>
+  );
+}
+
+async function handleRelayTargetsCommand(args: string): Promise<void> {
+  const peerId = args.trim();
+  const suffix = peerId ? `?peerId=${encodeURIComponent(peerId)}` : "";
+  printRelayTargets(
+    (await getJson(`/relay/targets${suffix}`)) as Array<{
+      relayTargetId: string;
+      peerId: string;
+      url: string;
+      title?: string;
+      status?: "open" | "attached" | "detached" | "closed";
+      lastSeenAt: number;
+    }>
+  );
+}
+
 async function parseJsonResponse(response: Response): Promise<any> {
   const text = await response.text();
   const json = text ? JSON.parse(text) : {};
@@ -735,6 +776,51 @@ async function parseJsonResponse(response: Response): Promise<any> {
 
 function printJson(value: unknown): void {
   console.log(JSON.stringify(value, null, 2));
+}
+
+function printRelayPeers(
+  peers: Array<{
+    peerId: string;
+    label?: string;
+    capabilities: string[];
+    transportLabel?: string;
+    registeredAt: number;
+    lastSeenAt: number;
+    status: "online" | "stale";
+  }>
+): void {
+  console.log(`Relay Peers: ${peers.length}`);
+  for (const peer of peers) {
+    console.log(
+      `- ${peer.peerId}  status=${peer.status}  transport=${peer.transportLabel ?? "relay"}  capabilities=${peer.capabilities.join(", ")}`
+    );
+    if (peer.label) {
+      console.log(`  ${peer.label}`);
+    }
+    console.log(`  registeredAt=${new Date(peer.registeredAt).toISOString()}  lastSeenAt=${new Date(peer.lastSeenAt).toISOString()}`);
+  }
+}
+
+function printRelayTargets(
+  targets: Array<{
+    relayTargetId: string;
+    peerId: string;
+    url: string;
+    title?: string;
+    status?: "open" | "attached" | "detached" | "closed";
+    lastSeenAt: number;
+  }>
+): void {
+  console.log(`Relay Targets: ${targets.length}`);
+  for (const target of targets) {
+    console.log(
+      `- ${target.relayTargetId}  peer=${target.peerId}  status=${target.status ?? "open"}  lastSeenAt=${new Date(target.lastSeenAt).toISOString()}`
+    );
+    console.log(`  ${target.url}`);
+    if (target.title) {
+      console.log(`  title: ${target.title}`);
+    }
+  }
 }
 
 function printFlows(flows: FlowLedger[]): void {
@@ -1280,6 +1366,14 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
         if (entry.browserContinuityState) {
           parts.push(`browser=${entry.browserContinuityState}`);
         }
+        if (entry.browserTransportLabel) {
+          parts.push(`transport=${entry.browserTransportLabel}`);
+        }
+        if (entry.relayDiagnosticBucket) {
+          parts.push(`relay=${entry.relayDiagnosticBucket}`);
+        } else if (entry.browserDiagnosticBucket) {
+          parts.push(`diag=${entry.browserDiagnosticBucket}`);
+        }
         if (entry.reasonPreview) {
           parts.push(`reason=${entry.reasonPreview}`);
         }
@@ -1300,6 +1394,14 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
         }
         if (entry.browserContinuityState) {
           parts.push(`browser=${entry.browserContinuityState}`);
+        }
+        if (entry.browserTransportLabel) {
+          parts.push(`transport=${entry.browserTransportLabel}`);
+        }
+        if (entry.relayDiagnosticBucket) {
+          parts.push(`relay=${entry.relayDiagnosticBucket}`);
+        } else if (entry.browserDiagnosticBucket) {
+          parts.push(`diag=${entry.browserDiagnosticBucket}`);
         }
         if (entry.reasonPreview) {
           parts.push(`reason=${entry.reasonPreview}`);
@@ -1373,6 +1475,12 @@ function printOperatorAttention(report: OperatorAttentionReport): void {
       if (entry.browserContinuityState) {
         parts.push(`browser=${entry.browserContinuityState}`);
       }
+      if (entry.browserTransportLabel) {
+        parts.push(`transport=${entry.browserTransportLabel}`);
+      }
+      if (entry.relayDiagnosticBucket) {
+        parts.push(`relay=${entry.relayDiagnosticBucket}`);
+      }
       console.log(`    - ${parts.join("  ")}`);
       console.log(`      ${entry.headline}`);
       console.log(`      next=${entry.nextStep}  latest=${entry.latestUpdate}`);
@@ -1401,6 +1509,14 @@ function printOperatorAttention(report: OperatorAttentionReport): void {
     }
     if (item.browserContinuityState) {
       parts.push(`browser=${item.browserContinuityState}`);
+    }
+    if (item.browserTransportLabel) {
+      parts.push(`transport=${item.browserTransportLabel}`);
+    }
+    if (item.relayDiagnosticBucket) {
+      parts.push(`relay=${item.relayDiagnosticBucket}`);
+    } else if (item.browserDiagnosticBucket) {
+      parts.push(`diag=${item.browserDiagnosticBucket}`);
     }
     console.log(`  - ${parts.join("  ")}`);
     console.log(`    headline: ${item.headline}`);
@@ -1446,6 +1562,14 @@ function printOperatorTriage(report: OperatorTriageReport): void {
       }
       if (area.browserContinuityState) {
         parts.push(`browser=${area.browserContinuityState}`);
+      }
+      if (area.browserTransportLabel) {
+        parts.push(`transport=${area.browserTransportLabel}`);
+      }
+      if (area.relayDiagnosticBucket) {
+        parts.push(`relay=${area.relayDiagnosticBucket}`);
+      } else if (area.browserDiagnosticBucket) {
+        parts.push(`diag=${area.browserDiagnosticBucket}`);
       }
       console.log(`    - ${parts.join("  ")}`);
       console.log(`      ${area.headline}`);
@@ -2686,6 +2810,28 @@ function printReplayBundle(bundle: ReplayIncidentBundle): void {
         `  browser session: ${bundle.browserContinuity.sessionId ?? "-"}  target=${bundle.browserContinuity.targetId ?? "-"}`
       );
     }
+    if (bundle.browserContinuity.transportMode || bundle.browserContinuity.transportLabel || bundle.browserContinuity.transportTargetId) {
+      console.log(
+        `  browser transport: ${bundle.browserContinuity.transportLabel ?? bundle.browserContinuity.transportMode ?? "-"}  peer=${bundle.browserContinuity.transportPeerId ?? "-"}  transport target=${bundle.browserContinuity.transportTargetId ?? "-"}`
+      );
+    }
+    if (
+      bundle.browserContinuity.browserDiagnosticBucket ||
+      bundle.browserContinuity.browserDiagnosticSummary ||
+      bundle.browserContinuity.relayPeerStatus ||
+      bundle.browserContinuity.relayTargetStatus ||
+      bundle.browserContinuity.relayDiagnosticBucket
+    ) {
+      const label = bundle.browserContinuity.transportMode === "relay" || bundle.browserContinuity.relayDiagnosticBucket ? "relay diagnostics" : "browser diagnostics";
+      console.log(
+        `  ${label}: peer=${bundle.browserContinuity.relayPeerStatus ?? "-"}  target=${bundle.browserContinuity.relayTargetStatus ?? "-"}  bucket=${bundle.browserContinuity.relayDiagnosticBucket ?? bundle.browserContinuity.browserDiagnosticBucket ?? "-"}`
+      );
+      if (bundle.browserContinuity.relayDiagnosticSummary) {
+        console.log(`  relay summary: ${bundle.browserContinuity.relayDiagnosticSummary}`);
+      } else if (bundle.browserContinuity.browserDiagnosticSummary) {
+        console.log(`  browser summary: ${bundle.browserContinuity.browserDiagnosticSummary}`);
+      }
+    }
     if (bundle.browserContinuity.resumeMode || bundle.browserContinuity.targetResolution) {
       console.log(
         `  browser resume: ${bundle.browserContinuity.resumeMode ?? "-"}  target resolution=${bundle.browserContinuity.targetResolution ?? "-"}`
@@ -2943,6 +3089,14 @@ function printReplayConsole(payload: ReplayConsoleReport): void {
       if (bundle.browserContinuityState) {
         parts.push(`browser=${bundle.browserContinuityState}`);
       }
+      if (bundle.browserTransportLabel) {
+        parts.push(`transport=${bundle.browserTransportLabel}`);
+      }
+      if (bundle.relayDiagnosticBucket) {
+        parts.push(`relay=${bundle.relayDiagnosticBucket}`);
+      } else if (bundle.browserDiagnosticBucket) {
+        parts.push(`diag=${bundle.browserDiagnosticBucket}`);
+      }
       if (bundle.operatorCaseState) {
         parts.push(`operator=${bundle.operatorCaseState}`);
       }
@@ -2985,6 +3139,14 @@ function printReplayConsole(payload: ReplayConsoleReport): void {
       }
       if (bundle.browserContinuityState) {
         parts.push(`browser=${bundle.browserContinuityState}`);
+      }
+      if (bundle.browserTransportLabel) {
+        parts.push(`transport=${bundle.browserTransportLabel}`);
+      }
+      if (bundle.relayDiagnosticBucket) {
+        parts.push(`relay=${bundle.relayDiagnosticBucket}`);
+      } else if (bundle.browserDiagnosticBucket) {
+        parts.push(`diag=${bundle.browserDiagnosticBucket}`);
       }
       if (bundle.operatorCaseState) {
         parts.push(`operator=${bundle.operatorCaseState}`);

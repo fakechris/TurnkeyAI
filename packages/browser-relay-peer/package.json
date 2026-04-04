@@ -1,0 +1,22 @@
+{
+  "name": "@turnkeyai/browser-relay-peer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && tsx scripts/write-extension-manifest.ts && tsx scripts/verify-extension-dist.ts"
+  },
+  "exports": {
+    "./daemon-relay-client": "./src/daemon-relay-client.ts",
+    "./peer-runtime": "./src/peer-runtime.ts",
+    "./peer-loop": "./src/peer-loop.ts",
+    "./chrome-tab-observer": "./src/chrome-tab-observer.ts",
+    "./chrome-action-executor": "./src/chrome-action-executor.ts",
+    "./chrome-content-script": "./src/chrome-content-script.ts",
+    "./chrome-content-script-protocol": "./src/chrome-content-script-protocol.ts",
+    "./chrome-extension-types": "./src/chrome-extension-types.ts",
+    "./chrome-extension-manifest": "./src/chrome-extension-manifest.ts",
+    "./chrome-extension-service-worker": "./src/chrome-extension-service-worker.ts",
+    "./index": "./src/index.ts"
+  }
+}

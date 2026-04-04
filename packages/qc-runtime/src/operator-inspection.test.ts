@@ -353,16 +353,26 @@ test("operator inspection builds one operator summary from flow, replay, and gov
         taskId: "task-op",
         roleId: "lead",
         workerType: "browser",
-        summary: "browser target detached",
-        failure: {
-          category: "stale_session",
-          layer: "worker",
-          retryable: true,
-          message: "browser target detached",
-          recommendedAction: "resume",
+      summary: "browser target detached",
+      failure: {
+        category: "stale_session",
+        layer: "worker",
+        retryable: true,
+        message: "browser target detached",
+        recommendedAction: "resume",
+      },
+      metadata: {
+        payload: {
+          sessionId: "browser-1",
+          targetId: "target-1",
+          transportMode: "relay",
+          transportLabel: "chrome-relay",
+          resumeMode: "warm",
+          targetResolution: "reconnect",
         },
       },
-    ],
+    },
+  ],
     recoveryRuns: [
       {
         recoveryRunId: buildRecoveryRunId("task-op"),
@@ -460,9 +470,11 @@ test("operator inspection builds one operator summary from flow, replay, and gov
   assert.deepEqual(activeCasesByKey["incident:task-op"]?.allowedActions, ["approve", "reject"]);
   assert.match(activeCasesByKey["incident:task-op"]?.reasonPreview ?? "", /\S+/);
   assert.equal(activeCasesByKey["incident:task-op"]?.browserContinuityState, "recovered");
+  assert.equal(activeCasesByKey["incident:task-op"]?.browserTransportLabel, "chrome-relay");
   assert.equal(summary.replay.latestBundles[0]?.operatorCaseState, "waiting_manual");
   assert.equal(summary.replay.latestBundles[0]?.operatorGate, "waiting for approval");
   assert.deepEqual(summary.replay.latestBundles[0]?.operatorAllowedActions, ["approve", "reject"]);
+  assert.equal(summary.replay.latestBundles[0]?.browserTransportLabel, "chrome-relay");
   assert.equal(summary.attentionOverview?.topCases?.[0]?.caseKey, "prompt:task-op");
 });
 
@@ -489,6 +501,7 @@ test("operator summary surfaces resolved case count from replay console", () => 
         payload: {
           sessionId: "browser-1",
           targetId: "target-1",
+          transportLabel: "chrome-relay",
           resumeMode: "warm",
           targetResolution: "reconnect",
         },
@@ -556,6 +569,7 @@ test("operator summary surfaces resolved case count from replay console", () => 
         payload: {
           sessionId: "browser-2",
           targetId: "target-2",
+          transportLabel: "local-automation",
           resumeMode: "warm",
           targetResolution: "reconnect",
         },
@@ -622,6 +636,7 @@ test("operator summary surfaces resolved case count from replay console", () => 
   assert.equal(summary.attentionOverview?.resolvedRecentCases?.[0]?.source, "replay");
   assert.equal(summary.attentionOverview?.resolvedRecentCases?.[0]?.gate, "recovered");
   assert.equal(summary.attentionOverview?.resolvedRecentCases?.[0]?.browserContinuityState, "recovered");
+  assert.equal(summary.attentionOverview?.resolvedRecentCases?.[0]?.browserTransportLabel, "local-automation");
 });
 
 test("operator summary does not classify recovery-gated replay bundles as resolved recent cases", () => {
@@ -890,6 +905,17 @@ test("operator inspection flattens cross-surface attention items", () => {
           message: "browser target detached",
           recommendedAction: "resume",
         },
+        metadata: {
+          payload: {
+            sessionId: "browser-session-1",
+            targetId: "target-1",
+            transportLabel: "chrome-relay",
+            transportPeerId: "peer-1",
+            transportTargetId: "chrome-tab:1",
+            resumeMode: "warm",
+            targetResolution: "reconnect",
+          },
+        },
       },
     ],
     recoveryRuns: [
@@ -930,6 +956,17 @@ test("operator inspection flattens cross-surface attention items", () => {
         reductionLevel: "reference-only",
       }),
     ],
+    relayDiagnostics: {
+      peers: [
+        {
+          peerId: "peer-1",
+          transportLabel: "chrome-relay",
+          lastSeenAt: 50,
+          status: "stale",
+        },
+      ],
+      targets: [],
+    },
     limit: 10,
   });
 
@@ -964,7 +1001,9 @@ test("operator inspection flattens cross-surface attention items", () => {
   assert.equal(casesByKey["incident:task-1"]?.caseState, "waiting_manual");
   assert.equal(casesByKey["incident:task-1"]?.itemCount, 2);
   assert.deepEqual(casesByKey["incident:task-1"]?.sources, ["recovery", "replay"]);
-  assert.match(casesByKey["incident:task-1"]?.headline ?? "", /incident:task-1 open via replay\+recovery/);
+  assert.equal(casesByKey["incident:task-1"]?.browserTransportLabel, "chrome-relay");
+  assert.equal(casesByKey["incident:task-1"]?.relayDiagnosticBucket, "peer_stale");
+  assert.match(casesByKey["incident:task-1"]?.headline ?? "", /incident:task-1 open via replay\+recovery .*transport=chrome-relay .*relay=peer_stale/);
   assert.equal(casesByKey["incident:task-1"]?.nextStep, "request_approval");
   assert.deepEqual(casesByKey["incident:task-1"]?.allowedActions, ["approve", "reject"]);
   assert.match(casesByKey["incident:task-1"]?.latestUpdate ?? "", /Approval required/);
@@ -981,7 +1020,9 @@ test("operator inspection flattens cross-surface attention items", () => {
   assert.equal(bySource.replay?.lifecycle, "open");
   assert.equal(bySource.replay?.gate, "follow_up_required");
   assert.equal(bySource.replay?.browserContinuityState, "attention");
-  assert.match(bySource.replay?.headline ?? "", /incident:task-1 open via replay\+recovery/);
+  assert.equal(bySource.replay?.browserTransportLabel, "chrome-relay");
+  assert.equal(bySource.replay?.relayDiagnosticBucket, "peer_stale");
+  assert.match(bySource.replay?.headline ?? "", /incident:task-1 open via replay\+recovery .*transport=chrome-relay .*relay=peer_stale/);
   assert.equal(bySource.recovery?.severity, "warning");
   assert.equal(bySource.recovery?.lifecycle, "waiting_manual");
   assert.equal(bySource.recovery?.caseKey, bySource.replay?.caseKey);
@@ -1069,6 +1110,86 @@ test("operator inspection keeps attention overview stable when item list is limi
   assert.equal(report.severityCounts.critical, 2);
   assert.equal(report.cases.length, 1);
   assert.equal(report.cases[0]?.caseKey, "governance:evt-limit");
+});
+
+test("operator inspection surfaces direct-cdp reconnect diagnostics in replay attention", () => {
+  const report = buildOperatorAttentionReport({
+    flows: [],
+    permissionRecords: [],
+    events: [],
+    replays: [
+      {
+        replayId: "task-direct-cdp:worker:worker:browser:task:task-direct-cdp",
+        layer: "worker",
+        status: "failed",
+        recordedAt: 30,
+        threadId: "thread-1",
+        taskId: "task-direct-cdp",
+        summary: "direct-cdp browser reconnected but target needs confirmation before resume",
+        failure: {
+          category: "stale_session",
+          layer: "worker",
+          retryable: true,
+          message: "direct-cdp browser reconnected but target needs confirmation before resume",
+          recommendedAction: "inspect",
+        },
+        metadata: {
+          payload: {
+            sessionId: "browser-session-direct-cdp",
+            targetId: "target-direct-cdp",
+            transportMode: "direct-cdp",
+            transportLabel: "direct-cdp",
+            transportTargetId: "page:manager-1:1",
+            resumeMode: "warm",
+            targetResolution: "reconnect",
+          },
+        },
+      },
+    ],
+    recoveryRuns: [
+      {
+        recoveryRunId: buildRecoveryRunId("task-direct-cdp"),
+        threadId: "thread-1",
+        sourceGroupId: "task-direct-cdp",
+        latestStatus: "partial",
+        status: "waiting_external",
+        nextAction: "inspect_then_resume",
+        autoDispatchReady: false,
+        requiresManualIntervention: true,
+        latestSummary: "Direct CDP browser reconnected, but manual confirmation is required before resuming.",
+        waitingReason: "Direct CDP browser reconnected, but manual confirmation is required before resuming.",
+        currentAttemptId: "attempt-direct-cdp",
+        attempts: [
+          {
+            attemptId: "attempt-direct-cdp",
+            action: "resume",
+            requestedAt: 21,
+            updatedAt: 22,
+            status: "waiting_external",
+            nextAction: "inspect_then_resume",
+            summary: "Direct CDP target must be manually confirmed before resume.",
+          },
+        ],
+        createdAt: 21,
+        updatedAt: 22,
+      },
+    ],
+    progressEvents: [],
+    limit: 10,
+  });
+
+  const casesByKey = Object.fromEntries(report.cases.map((entry) => [entry.caseKey, entry]));
+  assert.equal(casesByKey["incident:task-direct-cdp"]?.browserTransportLabel, "direct-cdp");
+  assert.equal(casesByKey["incident:task-direct-cdp"]?.browserDiagnosticBucket, "reconnect_required");
+  assert.match(
+    casesByKey["incident:task-direct-cdp"]?.headline ?? "",
+    /incident:task-direct-cdp .*transport=direct-cdp .*diag=reconnect_required/
+  );
+
+  const bySource = Object.fromEntries(report.items.map((item) => [item.source, item]));
+  assert.equal(bySource.replay?.browserTransportLabel, "direct-cdp");
+  assert.equal(bySource.replay?.browserDiagnosticBucket, "reconnect_required");
+  assert.ok(bySource.replay?.reasons?.includes("reconnect_required"));
 });
 
 test("operator inspection counts cases from the full dataset before limiting returned items", () => {

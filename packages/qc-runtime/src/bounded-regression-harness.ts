@@ -3473,6 +3473,385 @@ const BUILT_IN_CASES: RegressionCase[] = [
     },
   },
   {
+    caseId: "relay-recovery-workflow-log-surfaces-peer-diagnostics",
+    title: "Relay recovery workflow log surfaces peer diagnostics",
+    area: "browser",
+    summary:
+      "Relay-backed recovery bundles should keep workflow status actionable while replay and operator surfaces expose stale-peer diagnostics.",
+    run() {
+      const records = [
+        {
+          replayId: "task-relay-workflow:worker:worker:browser:task:task-relay-workflow",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 10,
+          threadId: "thread-1",
+          taskId: "task-relay-workflow",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "relay snapshot timed out after the peer disconnected",
+          failure: {
+            category: "transport_failed",
+            layer: "worker",
+            retryable: true,
+            message: "relay action request timed out after peer disconnect",
+            recommendedAction: "resume",
+          },
+          metadata: {
+            payload: {
+              sessionId: "browser-session-relay-workflow",
+              targetId: "target-relay-workflow",
+              transportMode: "relay",
+              transportLabel: "chrome-relay",
+              transportPeerId: "peer-relay-workflow",
+              transportTargetId: "chrome-tab:41",
+              resumeMode: "warm",
+              targetResolution: "reconnect",
+            },
+          },
+        },
+        {
+          replayId: "task-relay-workflow-follow:scheduled",
+          layer: "scheduled",
+          status: "completed",
+          recordedAt: 20,
+          threadId: "thread-1",
+          taskId: "task-relay-workflow-follow",
+          roleId: "role-operator",
+          summary: "relay recovery follow-up dispatched",
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-relay-workflow",
+              attemptId: "recovery:task-relay-workflow:attempt:1",
+              dispatchReplayId: "task-relay-workflow-follow:scheduled",
+            },
+          },
+        },
+        {
+          replayId: "task-relay-workflow-follow:worker:worker:browser:task:task-relay-workflow-follow",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 30,
+          threadId: "thread-1",
+          taskId: "task-relay-workflow-follow",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "peer restarted but manual confirmation is still required before resuming",
+          failure: {
+            category: "stale_session",
+            layer: "worker",
+            retryable: true,
+            message: "peer restarted but target needs manual confirmation before resume",
+            recommendedAction: "inspect",
+          },
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-relay-workflow",
+              attemptId: "recovery:task-relay-workflow:attempt:1",
+              dispatchReplayId: "task-relay-workflow-follow:scheduled",
+            },
+            payload: {
+              sessionId: "browser-session-relay-workflow",
+              targetId: "target-relay-workflow",
+              transportMode: "relay",
+              transportLabel: "chrome-relay",
+              transportPeerId: "peer-relay-workflow",
+              transportTargetId: "chrome-tab:41",
+              resumeMode: "warm",
+              targetResolution: "reconnect",
+            },
+          },
+        },
+      ] satisfies ReplayRecord[];
+
+      const run: RecoveryRun = {
+        recoveryRunId: buildRecoveryRunId("task-relay-workflow"),
+        threadId: "thread-1",
+        sourceGroupId: "task-relay-workflow",
+        taskId: "task-relay-workflow",
+        roleId: "role-operator",
+        targetLayer: "worker",
+        targetWorker: "browser",
+        latestStatus: "partial",
+        status: "waiting_external",
+        nextAction: "inspect_then_resume",
+        autoDispatchReady: false,
+        requiresManualIntervention: true,
+        latestSummary: "Relay peer reconnected, but manual confirmation is required before resuming.",
+        waitingReason: "Relay peer reconnected, but manual confirmation is required before resuming.",
+        currentAttemptId: "recovery:task-relay-workflow:attempt:1",
+        attempts: [
+          {
+            attemptId: "recovery:task-relay-workflow:attempt:1",
+            action: "resume",
+            requestedAt: 18,
+            updatedAt: 30,
+            status: "waiting_external",
+            nextAction: "inspect_then_resume",
+            summary: "Relay target must be manually confirmed before resume.",
+            dispatchedTaskId: "task-relay-workflow-follow",
+            targetLayer: "worker",
+            targetWorker: "browser",
+            browserOutcome: "resume_failed",
+            failure: {
+              category: "stale_session",
+              layer: "worker",
+              retryable: true,
+              message: "peer restarted but target needs manual confirmation before resume",
+              recommendedAction: "inspect",
+            },
+          },
+        ],
+        createdAt: 18,
+        updatedAt: 30,
+      };
+
+      const relayDiagnostics = {
+        peers: [
+          {
+            peerId: "peer-relay-workflow",
+            transportLabel: "chrome-relay",
+            lastSeenAt: 31,
+            status: "stale" as const,
+          },
+        ],
+        targets: [],
+      };
+
+      const bundle = buildReplayIncidentBundle(records, "task-relay-workflow", relayDiagnostics);
+      if (!bundle) {
+        return buildResult(this, false, ["bundle=missing"]);
+      }
+      const enriched = attachRecoveryRunToReplayIncidentBundle({
+        bundle,
+        run,
+        records,
+      });
+      const replayConsole = buildReplayConsoleReport(records, 10, [run], relayDiagnostics);
+      const consoleBundle = replayConsole.latestBundles.find((entry) => entry.groupId === "task-relay-workflow");
+      const operatorSummary = buildOperatorSummaryReport({
+        flows: [],
+        permissionRecords: [],
+        events: [],
+        replays: records,
+        recoveryRuns: [run],
+        relayDiagnostics,
+        limit: 10,
+      });
+      const operatorCase = operatorSummary.attentionOverview?.activeCases?.find((item) => item.caseKey === "incident:task-relay-workflow");
+      const details = [
+        `workflow=${enriched.recoveryWorkflow?.status ?? "-"}`,
+        `bundleRelay=${enriched.browserContinuity?.relayDiagnosticBucket ?? "-"}`,
+        `consoleWorkflow=${consoleBundle?.workflowStatus ?? "-"}`,
+        `consoleRelay=${consoleBundle?.relayDiagnosticBucket ?? "-"}`,
+        `operatorState=${operatorCase?.caseState ?? "-"}`,
+        `operatorNext=${operatorCase?.nextStep ?? "-"}`,
+      ];
+      const passed =
+        enriched.recoveryWorkflow?.status === "manual_follow_up" &&
+        enriched.recoveryWorkflow?.nextAction === "inspect_then_resume" &&
+        enriched.browserContinuity?.transportLabel === "chrome-relay" &&
+        enriched.browserContinuity?.transportPeerId === "peer-relay-workflow" &&
+        enriched.browserContinuity?.relayDiagnosticBucket === "peer_stale" &&
+        enriched.recoveryOperator?.caseState === "waiting_manual" &&
+        enriched.recoveryOperator?.nextAction === "inspect_then_resume" &&
+        replayConsole.workflowStatusCounts.manual_follow_up === 1 &&
+        replayConsole.operatorCaseStateCounts.waiting_manual === 1 &&
+        consoleBundle?.workflowStatus === "manual_follow_up" &&
+        consoleBundle?.operatorCaseState === "waiting_manual" &&
+        consoleBundle?.browserTransportLabel === "chrome-relay" &&
+        consoleBundle?.relayDiagnosticBucket === "peer_stale" &&
+        operatorSummary.replay.operatorCaseStateCounts.waiting_manual === 1 &&
+        operatorCase?.caseState === "waiting_manual" &&
+        operatorCase?.browserTransportLabel === "chrome-relay" &&
+        operatorCase?.relayDiagnosticBucket === "peer_stale" &&
+        operatorCase?.nextStep === "inspect_then_resume";
+      return buildResult(this, Boolean(passed), details);
+    },
+  },
+  {
+    caseId: "direct-cdp-recovery-workflow-log-surfaces-reconnect-diagnostics",
+    title: "Direct CDP recovery workflow log surfaces reconnect diagnostics",
+    area: "browser",
+    summary:
+      "Direct-CDP-backed recovery bundles should keep workflow status actionable while replay and operator surfaces preserve reconnect diagnostics.",
+    run() {
+      const records = [
+        {
+          replayId: "task-direct-cdp-workflow:worker:worker:browser:task:task-direct-cdp-workflow",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 10,
+          threadId: "thread-1",
+          taskId: "task-direct-cdp-workflow",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "direct-cdp snapshot timed out after the CDP browser disconnected",
+          failure: {
+            category: "transport_failed",
+            layer: "worker",
+            retryable: true,
+            message: "direct-cdp session dropped before snapshot completed",
+            recommendedAction: "resume",
+          },
+          metadata: {
+            payload: {
+              sessionId: "browser-session-direct-cdp-workflow",
+              targetId: "target-direct-cdp-workflow",
+              transportMode: "direct-cdp",
+              transportLabel: "direct-cdp",
+              transportTargetId: "page:manager-1:1",
+              resumeMode: "warm",
+              targetResolution: "reconnect",
+            },
+          },
+        },
+        {
+          replayId: "task-direct-cdp-workflow-follow:scheduled",
+          layer: "scheduled",
+          status: "completed",
+          recordedAt: 20,
+          threadId: "thread-1",
+          taskId: "task-direct-cdp-workflow-follow",
+          roleId: "role-operator",
+          summary: "direct-cdp reconnect recovery follow-up dispatched",
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-direct-cdp-workflow",
+              attemptId: "recovery:task-direct-cdp-workflow:attempt:1",
+              dispatchReplayId: "task-direct-cdp-workflow-follow:scheduled",
+            },
+          },
+        },
+        {
+          replayId: "task-direct-cdp-workflow-follow:worker:worker:browser:task:task-direct-cdp-workflow-follow",
+          layer: "worker",
+          status: "failed",
+          recordedAt: 30,
+          threadId: "thread-1",
+          taskId: "task-direct-cdp-workflow-follow",
+          roleId: "role-operator",
+          workerType: "browser",
+          summary: "direct-cdp browser reconnected but target needs confirmation before resume",
+          failure: {
+            category: "stale_session",
+            layer: "worker",
+            retryable: true,
+            message: "direct-cdp browser reconnected but target needs confirmation before resume",
+            recommendedAction: "inspect",
+          },
+          metadata: {
+            recoveryContext: {
+              parentGroupId: "task-direct-cdp-workflow",
+              attemptId: "recovery:task-direct-cdp-workflow:attempt:1",
+              dispatchReplayId: "task-direct-cdp-workflow-follow:scheduled",
+            },
+            payload: {
+              sessionId: "browser-session-direct-cdp-workflow",
+              targetId: "target-direct-cdp-workflow",
+              transportMode: "direct-cdp",
+              transportLabel: "direct-cdp",
+              transportTargetId: "page:manager-1:1",
+              resumeMode: "warm",
+              targetResolution: "reconnect",
+            },
+          },
+        },
+      ] satisfies ReplayRecord[];
+
+      const run: RecoveryRun = {
+        recoveryRunId: buildRecoveryRunId("task-direct-cdp-workflow"),
+        threadId: "thread-1",
+        sourceGroupId: "task-direct-cdp-workflow",
+        taskId: "task-direct-cdp-workflow",
+        roleId: "role-operator",
+        targetLayer: "worker",
+        targetWorker: "browser",
+        latestStatus: "partial",
+        status: "waiting_external",
+        nextAction: "inspect_then_resume",
+        autoDispatchReady: false,
+        requiresManualIntervention: true,
+        latestSummary: "Direct CDP browser reconnected, but manual confirmation is required before resuming.",
+        waitingReason: "Direct CDP browser reconnected, but manual confirmation is required before resuming.",
+        currentAttemptId: "recovery:task-direct-cdp-workflow:attempt:1",
+        attempts: [
+          {
+            attemptId: "recovery:task-direct-cdp-workflow:attempt:1",
+            action: "resume",
+            requestedAt: 18,
+            updatedAt: 30,
+            status: "waiting_external",
+            nextAction: "inspect_then_resume",
+            summary: "Direct CDP target must be manually confirmed before resume.",
+            dispatchedTaskId: "task-direct-cdp-workflow-follow",
+            targetLayer: "worker",
+            targetWorker: "browser",
+            browserOutcome: "resume_failed",
+            failure: {
+              category: "stale_session",
+              layer: "worker",
+              retryable: true,
+              message: "direct-cdp browser reconnected but target needs confirmation before resume",
+              recommendedAction: "inspect",
+            },
+          },
+        ],
+        createdAt: 18,
+        updatedAt: 30,
+      };
+
+      const bundle = buildReplayIncidentBundle(records, "task-direct-cdp-workflow");
+      if (!bundle) {
+        return buildResult(this, false, ["bundle=missing"]);
+      }
+      const enriched = attachRecoveryRunToReplayIncidentBundle({
+        bundle,
+        run,
+        records,
+      });
+      const replayConsole = buildReplayConsoleReport(records, 10, [run]);
+      const consoleBundle = replayConsole.latestBundles.find((entry) => entry.groupId === "task-direct-cdp-workflow");
+      const operatorSummary = buildOperatorSummaryReport({
+        flows: [],
+        permissionRecords: [],
+        events: [],
+        replays: records,
+        recoveryRuns: [run],
+        limit: 10,
+      });
+      const operatorCase = operatorSummary.attentionOverview?.activeCases?.find(
+        (item) => item.caseKey === "incident:task-direct-cdp-workflow"
+      );
+      const details = [
+        `workflow=${enriched.recoveryWorkflow?.status ?? "-"}`,
+        `bundleTransport=${enriched.browserContinuity?.transportLabel ?? "-"}`,
+        `consoleWorkflow=${consoleBundle?.workflowStatus ?? "-"}`,
+        `consoleTransport=${consoleBundle?.browserTransportLabel ?? "-"}`,
+        `operatorState=${operatorCase?.caseState ?? "-"}`,
+        `operatorNext=${operatorCase?.nextStep ?? "-"}`,
+      ];
+      const passed =
+        enriched.recoveryWorkflow?.status === "manual_follow_up" &&
+        enriched.recoveryWorkflow?.nextAction === "inspect_then_resume" &&
+        enriched.browserContinuity?.transportMode === "direct-cdp" &&
+        enriched.browserContinuity?.transportLabel === "direct-cdp" &&
+        enriched.browserContinuity?.transportTargetId === "page:manager-1:1" &&
+        enriched.recoveryOperator?.caseState === "waiting_manual" &&
+        enriched.recoveryOperator?.nextAction === "inspect_then_resume" &&
+        replayConsole.workflowStatusCounts.manual_follow_up === 1 &&
+        replayConsole.operatorCaseStateCounts.waiting_manual === 1 &&
+        consoleBundle?.workflowStatus === "manual_follow_up" &&
+        consoleBundle?.operatorCaseState === "waiting_manual" &&
+        consoleBundle?.browserTransportLabel === "direct-cdp" &&
+        operatorSummary.replay.operatorCaseStateCounts.waiting_manual === 1 &&
+        operatorCase?.caseState === "waiting_manual" &&
+        operatorCase?.browserTransportLabel === "direct-cdp" &&
+        operatorCase?.nextStep === "inspect_then_resume";
+      return buildResult(this, Boolean(passed), details);
+    },
+  },
+  {
     caseId: "recovery-bundle-closes-after-approved-fallback",
     title: "Approved fallback closes recovery bundle follow-up",
     area: "recovery",

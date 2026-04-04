@@ -126,6 +126,79 @@ npm test
 
 主干 PR 的基础 CI 当前会运行 `npm run typecheck`、`npm test` 和 `npm run build`。
 
+如果要构建 Chrome relay extension 产物：
+
+```bash
+npm run build:relay-extension
+```
+
+产物会输出到：
+
+```text
+packages/browser-relay-peer/dist/extension
+```
+
+当前这是未打包的 Chrome extension 目录，包含：
+
+- `manifest.json`
+- `service-worker.js`
+- `content-script.js`
+
+如果要直接启动一个带扩展的本地 Chromium 系浏览器做 smoke：
+
+```bash
+npm run relay:launch -- --url https://example.com
+```
+
+脚本当前会优先选择支持 unpacked extension flag 的本地浏览器；在 macOS 上，若正式版 `Google Chrome` 忽略这些 flag，优先改用 `Microsoft Edge`、`Chromium`，或显式传 `--chrome-path`。
+
+如果 daemon 已经以 relay 模式启动，可以等待扩展 peer 真正注册上来：
+
+```bash
+npm run relay:wait -- --require-target
+```
+
+如果要启动一个带 `--remote-debugging-port` 的本地 Chromium 系浏览器做 direct-cdp 验证：
+
+```bash
+npm run cdp:launch -- --url https://example.com
+```
+
+如果已经有一个可用的 CDP endpoint，可以等待它真正 ready：
+
+```bash
+npm run cdp:wait -- --cdp-endpoint http://127.0.0.1:9222
+```
+
+如果要一条命令跑完整本地 direct-cdp smoke：
+
+```bash
+npm run cdp:smoke
+npm run cdp:smoke -- --url https://example.com
+npm run cdp:smoke -- --verify-reconnect --verify-workflow-log
+```
+
+如果要一条命令跑完整本地 smoke：
+
+```bash
+npm run relay:smoke
+npm run relay:smoke -- --url https://example.com
+```
+
+配合本地 daemon 走 relay transport 时，可以显式设置：
+
+```bash
+TURNKEYAI_BROWSER_TRANSPORT=relay npm run daemon
+```
+
+配合本地 daemon 走 direct-cdp transport 时，可以显式设置：
+
+```bash
+TURNKEYAI_BROWSER_TRANSPORT=direct-cdp \
+TURNKEYAI_BROWSER_CDP_ENDPOINT=http://127.0.0.1:9222 \
+npm run daemon
+```
+
 启动本地 daemon：
 
 ```bash
@@ -186,6 +259,8 @@ npx @turnkeyai/cli tui
 `prompt-console` 现在会额外汇总 recent-turn / retrieved-memory / worker-evidence 的实际打包数量，以及 pending / waiting / open-question / decision-or-constraint 的 carry-forward 情况；acceptance / soak 也已把这些计数和 runtime waiting-point 一起编进长链验证，方便直接看高压上下文下哪些信息被保住了。
 `release-verify` 会对将要公开发布的 CLI 走一遍 `npm pack`、解包、bin/dist help smoke 和 `npm publish --dry-run`，避免 package metadata 在真正发版时才暴露问题；`soak-series` 和单独的 `Long Soak` workflow 会把 `soak / realworld / acceptance` 做多轮聚合运行，用来承接高成本、非 PR required 的长周期稳态验证。
 `validation-profiles` / `validation-profile-run` 会把现有 `validation-run`、`release-verify` 和 `soak-series` 收成固定 hardening 档位：`smoke` 适合本地快速回归，`nightly` / `prerelease` / `weekly` 适合持续稳定性和值班/发版前信心检查。
+`relay-peers` / `relay-targets [peerId]` 可以直接查看本地 daemon 当前看到的 relay 扩展连接和浏览器 tab 发现结果，便于做 extension smoke 和 transport 排障。
+`direct-cdp` 当前也已经有本地 launch / wait / smoke 链路，适合验证“接管一个已启用 CDP 的真实 Chromium 浏览器”这条 transport；`cdp:smoke` 现在还支持 `--verify-reconnect` 和 `--verify-workflow-log`，可以把浏览器重启后的 session 恢复和 replay/operator workflow-log 读数一起压过一遍。
 
 模型配置默认会按这个顺序查找：
 
@@ -230,6 +305,8 @@ npx @turnkeyai/cli tui
 - [Runtime Core v2 Plan](./docs/design/runtime-core-v2-plan.md)
 - [Project Foundation](./docs/design/project-foundation.md)
 - [Browser Session And Worker Protocol](./docs/design/browser-session-and-worker-protocol.md)
+- [Browser Relay Bridge v1](./docs/design/browser-relay-bridge-v1.md)
+- [Browser Transport v1 Execution Plan](./docs/design/browser-transport-v1-execution-plan.md)
 - [Prompt Context Compression Design](./docs/design/prompt-context-compression-design.md)
 - [Model Catalog And Chain Config](./docs/design/model-catalog-and-chain-config.md)
 

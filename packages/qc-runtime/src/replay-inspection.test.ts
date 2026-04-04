@@ -204,6 +204,9 @@ test("replay inspection builds replay console and incident bundle views", () => 
         payload: {
           sessionId: "browser-session-5",
           targetId: "target-5",
+          transportMode: "relay",
+          transportLabel: "chrome-relay",
+          transportTargetId: "chrome-tab:5",
           resumeMode: "warm",
           targetResolution: "reconnect",
         },
@@ -224,6 +227,7 @@ test("replay inspection builds replay console and incident bundle views", () => 
   assert.equal(consoleReport.latestBundles[0]?.caseState, "open");
   assert.equal(consoleReport.latestBundles[0]?.workflowStatus, "not_started");
   assert.equal(consoleReport.latestBundles[0]?.browserContinuityState, "attention");
+  assert.equal(consoleReport.latestBundles[0]?.browserTransportLabel, "chrome-relay");
   assert.match(consoleReport.latestBundles[0]?.workflowSummary ?? "", /not been dispatched yet/i);
   assert.equal(consoleReport.latestIncidents[0]?.groupId, "task-5");
   assert.equal(consoleReport.latestGroups[0]?.browserContinuity?.state, "attention");
@@ -240,6 +244,110 @@ test("replay inspection builds replay console and incident bundle views", () => 
   assert.equal(bundle?.followUpGroups.length, 0);
   assert.equal(bundle?.browserContinuity?.state, "attention");
   assert.equal(bundle?.browserContinuity?.sessionId, "browser-session-5");
+  assert.equal(bundle?.browserContinuity?.transportMode, "relay");
+  assert.equal(bundle?.browserContinuity?.transportLabel, "chrome-relay");
+  assert.equal(bundle?.browserContinuity?.transportTargetId, "chrome-tab:5");
+});
+
+test("replay inspection enriches relay browser continuity with peer and target diagnostics", () => {
+  const records = [
+    {
+      replayId: "task-relay:worker",
+      layer: "worker",
+      status: "failed",
+      recordedAt: 10,
+      threadId: "thread-1",
+      taskId: "task-relay",
+      workerType: "browser",
+      summary: "relay browser worker failed",
+      failure: {
+        category: "transport_failed",
+        layer: "worker",
+        retryable: true,
+        message: "relay action request timed out: relay-action-1",
+        recommendedAction: "retry",
+      },
+      metadata: {
+        payload: {
+          sessionId: "browser-session-relay",
+          targetId: "target-relay",
+          transportMode: "relay",
+          transportLabel: "chrome-relay",
+          transportPeerId: "peer-relay",
+          transportTargetId: "chrome-tab:99",
+          resumeMode: "warm",
+          targetResolution: "reconnect",
+        },
+      },
+    },
+  ] as Parameters<typeof buildReplayInspectionReport>[0];
+
+  const relayDiagnostics = {
+    peers: [
+      {
+        peerId: "peer-relay",
+        transportLabel: "chrome-relay",
+        lastSeenAt: 20,
+        status: "stale" as const,
+      },
+    ],
+    targets: [],
+  };
+
+  const consoleReport = buildReplayConsoleReport(records, 5, [], relayDiagnostics);
+  const bundle = buildReplayIncidentBundle(records, "task-relay", relayDiagnostics);
+
+  assert.equal(consoleReport.latestBundles[0]?.relayDiagnosticBucket, "peer_stale");
+  assert.ok(bundle?.browserContinuity);
+  assert.equal(bundle?.browserContinuity?.transportPeerId, "peer-relay");
+  assert.equal(bundle?.browserContinuity?.relayPeerStatus, "stale");
+  assert.equal(bundle?.browserContinuity?.relayTargetStatus, "missing");
+  assert.equal(bundle?.browserContinuity?.relayDiagnosticBucket, "peer_stale");
+  assert.match(bundle?.browserContinuity?.relayDiagnosticSummary ?? "", /stale/i);
+  assert.match(bundle?.caseHeadline ?? "", /relay=peer_stale/);
+});
+
+test("replay inspection enriches direct-cdp browser continuity with reconnect diagnostics", () => {
+  const records = [
+    {
+      replayId: "task-direct-cdp:worker",
+      layer: "worker",
+      status: "failed",
+      recordedAt: 10,
+      threadId: "thread-1",
+      taskId: "task-direct-cdp",
+      workerType: "browser",
+      summary: "direct-cdp browser reconnected but target needs confirmation before resume",
+      failure: {
+        category: "stale_session",
+        layer: "worker",
+        retryable: true,
+        message: "direct-cdp browser reconnected but target needs confirmation before resume",
+        recommendedAction: "inspect",
+      },
+      metadata: {
+        payload: {
+          sessionId: "browser-session-direct-cdp",
+          targetId: "target-direct-cdp",
+          transportMode: "direct-cdp",
+          transportLabel: "direct-cdp",
+          transportTargetId: "page:manager-1:1",
+          resumeMode: "warm",
+          targetResolution: "reconnect",
+        },
+      },
+    },
+  ] as Parameters<typeof buildReplayInspectionReport>[0];
+
+  const consoleReport = buildReplayConsoleReport(records, 5);
+  const bundle = buildReplayIncidentBundle(records, "task-direct-cdp");
+
+  assert.equal(consoleReport.latestBundles[0]?.browserDiagnosticBucket, "reconnect_required");
+  assert.ok(bundle?.browserContinuity);
+  assert.equal(bundle?.browserContinuity?.transportLabel, "direct-cdp");
+  assert.equal(bundle?.browserContinuity?.browserDiagnosticBucket, "reconnect_required");
+  assert.match(bundle?.browserContinuity?.browserDiagnosticSummary ?? "", /confirmation before resume/i);
+  assert.match(bundle?.caseHeadline ?? "", /diag=reconnect_required/);
 });
 
 test("replay console surfaces recovery workflow states from actionable bundles", () => {
@@ -577,6 +685,8 @@ test("replay console suppresses superseded failed follow-up groups once the root
         payload: {
           sessionId: "browser-root",
           targetId: "target-root",
+          transportMode: "local",
+          transportLabel: "local-automation",
           resumeMode: "cold",
           targetResolution: "reopen",
         },
@@ -592,6 +702,7 @@ test("replay console suppresses superseded failed follow-up groups once the root
   assert.equal(consoleReport.latestResolvedBundles[0]?.groupId, "task-root");
   assert.equal(consoleReport.latestResolvedBundles[0]?.workflowStatus, "recovered");
   assert.equal(consoleReport.latestResolvedBundles[0]?.browserContinuityState, "recovered");
+  assert.equal(consoleReport.latestResolvedBundles[0]?.browserTransportLabel, "local-automation");
 });
 
 test("replay console surfaces operator waiting-manual state alongside recovered workflow state", () => {

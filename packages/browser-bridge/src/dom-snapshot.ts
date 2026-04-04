@@ -6,47 +6,47 @@ export async function captureDomSnapshot(input: {
   requestedUrl: string;
   statusCode: number;
 }): Promise<BrowserSnapshotResult> {
-  const data = await input.page.evaluate(() => {
-    function escapeSelector(value: string): string {
-      return value.replace(/([ #;?%&,.+*~':"!^$[\]()=>|/@])/g, "\\$1");
+  const data = (await input.page.evaluate(`(() => {
+    function escapeSelector(value) {
+      return value.replace(/([ #;?%&,.+*~':"!^$[\\]()=>|/@])/g, "\\\\$1");
     }
 
-    function escapeAttribute(value: string): string {
-      return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    function escapeAttribute(value) {
+      return value.replace(/\\\\/g, "\\\\\\\\").replace(/"/g, '\\\\"');
     }
 
-    function buildSelectorCandidates(element: HTMLElement): string[] {
-      const selectors: string[] = [];
+    function buildSelectorCandidates(element) {
+      const selectors = [];
       const tagName = element.tagName.toLowerCase();
       const id = element.getAttribute("id");
       if (id) {
-        selectors.push(`#${escapeSelector(id)}`);
+        selectors.push("#" + escapeSelector(id));
       }
 
       const name = element.getAttribute("name");
       if (name) {
-        selectors.push(`${tagName}[name="${escapeAttribute(name)}"]`);
+        selectors.push(tagName + '[name="' + escapeAttribute(name) + '"]');
       }
 
       const ariaLabel = element.getAttribute("aria-label");
       if (ariaLabel) {
-        selectors.push(`${tagName}[aria-label="${escapeAttribute(ariaLabel)}"]`);
+        selectors.push(tagName + '[aria-label="' + escapeAttribute(ariaLabel) + '"]');
       }
 
       const placeholder = element.getAttribute("placeholder");
       if (placeholder) {
-        selectors.push(`${tagName}[placeholder="${escapeAttribute(placeholder)}"]`);
+        selectors.push(tagName + '[placeholder="' + escapeAttribute(placeholder) + '"]');
       }
 
       if (element.dataset.turnkeyaiRef) {
-        selectors.push(`[data-turnkeyai-ref="${escapeAttribute(element.dataset.turnkeyaiRef)}"]`);
+        selectors.push('[data-turnkeyai-ref="' + escapeAttribute(element.dataset.turnkeyaiRef) + '"]');
       }
 
-      return [...new Set(selectors)];
+      return Array.from(new Set(selectors));
     }
 
-    const bodyText = document.body?.innerText ?? "";
-    const textExcerpt = bodyText.replace(/\s+/g, " ").trim().slice(0, 600);
+    const bodyText = document.body ? document.body.innerText : "";
+    const textExcerpt = bodyText.replace(/\\s+/g, " ").trim().slice(0, 600);
     document.querySelectorAll("[data-turnkeyai-ref]").forEach((element) => {
       element.removeAttribute("data-turnkeyai-ref");
     });
@@ -55,9 +55,9 @@ export async function captureDomSnapshot(input: {
     )
       .slice(0, 20)
       .map((element, index) => {
-        const html = element as HTMLElement;
+        const html = element;
         const tagName = html.tagName.toLowerCase();
-        const role = html.getAttribute("role") ?? tagName;
+        const role = html.getAttribute("role") || tagName;
         const label = [
           html.innerText,
           html.getAttribute("aria-label"),
@@ -65,21 +65,21 @@ export async function captureDomSnapshot(input: {
           html.getAttribute("name"),
           html.getAttribute("value"),
         ]
-          .find((value) => Boolean(value?.trim()))
+          .find((value) => Boolean(value && value.trim()))
           ?.trim();
-        const refId = `ref-${index + 1}`;
+        const refId = "ref-" + String(index + 1);
         html.setAttribute("data-turnkeyai-ref", refId);
         const selectors = buildSelectorCandidates(html);
         const textAnchors = [label, html.textContent, html.getAttribute("aria-label")]
-          .map((value) => value?.trim())
-          .filter((value): value is string => Boolean(value))
+          .map((value) => value && value.trim())
+          .filter((value) => Boolean(value))
           .slice(0, 3);
 
         return {
           refId,
           tagName,
           role,
-          label: label ?? "(unlabeled)",
+          label: label || "(unlabeled)",
           selectors,
           textAnchors,
         };
@@ -91,7 +91,12 @@ export async function captureDomSnapshot(input: {
       textExcerpt,
       interactives,
     };
-  });
+  })()`)) as {
+    finalUrl: string;
+    title: string;
+    textExcerpt: string;
+    interactives: BrowserSnapshotResult["interactives"];
+  };
 
   return {
     requestedUrl: input.requestedUrl,
