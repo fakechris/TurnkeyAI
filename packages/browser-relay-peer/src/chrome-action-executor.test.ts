@@ -7,7 +7,7 @@ import { ChromeRelayActionExecutor } from "./chrome-action-executor";
 test("chrome relay action executor can open a tab and then execute content-script actions", async () => {
   const sentMessages: unknown[] = [];
   const platform = fakePlatform({
-    activeTab: { id: 7, url: "https://example.com", title: "Example", status: "complete" },
+    activeTab: { id: 7, windowId: 3, url: "https://example.com", title: "Example", status: "complete" },
     onSendMessage(tabId, message) {
       sentMessages.push({ tabId, message });
       return {
@@ -54,10 +54,51 @@ test("chrome relay action executor can open a tab and then execute content-scrip
   assert.equal(sentMessages.length, 1);
 });
 
+test("chrome relay action executor captures screenshot payloads through the extension platform", async () => {
+  const executor = new ChromeRelayActionExecutor(
+    fakePlatform({
+      activeTab: { id: 7, windowId: 3, url: "https://example.com", title: "Example", status: "complete" },
+      onSendMessage() {
+        return {
+          ok: true,
+          page: {
+            requestedUrl: "https://example.com",
+            finalUrl: "https://example.com",
+            title: "Example",
+            textExcerpt: "Example page",
+            statusCode: 200,
+            interactives: [],
+          },
+          trace: [],
+        };
+      },
+      onCaptureVisibleTab() {
+        return "data:image/png;base64,c2NyZWVuc2hvdA==";
+      },
+    })
+  );
+
+  const result = await executor.execute({
+    actionRequestId: "relay-action-1",
+    peerId: "peer-1",
+    browserSessionId: "browser-session-1",
+    taskId: "task-1",
+    actions: [{ kind: "screenshot", label: "final" }],
+    createdAt: 1,
+    expiresAt: 2,
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.screenshotPayloads.length, 1);
+  assert.equal(result.screenshotPayloads[0]?.mimeType, "image/png");
+  assert.equal(result.screenshotPayloads[0]?.dataBase64, "c2NyZWVuc2hvdA==");
+  assert.equal(result.trace.some((entry) => entry.kind === "screenshot"), true);
+});
+
 test("chrome relay action executor surfaces content-script failures", async () => {
   const executor = new ChromeRelayActionExecutor(
     fakePlatform({
-      activeTab: { id: 7, url: "https://example.com", title: "Example", status: "complete" },
+      activeTab: { id: 7, windowId: 3, url: "https://example.com", title: "Example", status: "complete" },
       onSendMessage() {
         return {
           ok: false,
@@ -83,10 +124,17 @@ test("chrome relay action executor surfaces content-script failures", async () =
 });
 
 function fakePlatform(input: {
-  activeTab: { id: number; url: string; title: string; status: "complete" | "loading" };
+  activeTab: { id: number; windowId?: number; url: string; title: string; status: "complete" | "loading" };
   onSendMessage(tabId: number, message: unknown): unknown;
+  onCaptureVisibleTab?(windowId?: number): string;
 }): ChromeExtensionPlatform {
-  let currentTab = { ...input.activeTab };
+  let currentTab: {
+    id: number;
+    windowId?: number;
+    url: string;
+    title: string;
+    status: "complete" | "loading";
+  } = { ...input.activeTab };
   return {
     runtime: {
       onMessage: {
@@ -115,6 +163,7 @@ function fakePlatform(input: {
     async createTab(createProperties) {
       currentTab = {
         id: currentTab.id + 1,
+        ...(currentTab.windowId !== undefined ? { windowId: currentTab.windowId } : {}),
         url: createProperties.url,
         title: "Created",
         status: "complete",
@@ -123,6 +172,9 @@ function fakePlatform(input: {
     },
     async sendTabMessage<T>(tabId: number, message: unknown) {
       return input.onSendMessage(tabId, message) as T;
+    },
+    async captureVisibleTab(windowId) {
+      return input.onCaptureVisibleTab?.(windowId) ?? "data:image/png;base64,";
     },
   };
 }

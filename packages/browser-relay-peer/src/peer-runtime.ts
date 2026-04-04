@@ -3,6 +3,7 @@ import type {
   RelayActionResult,
   RelayPeerRecord,
   RelayPeerRegistration,
+  RelayScreenshotPayload,
   RelayTargetRecord,
   RelayTargetReport,
 } from "@turnkeyai/browser-bridge/transport/relay-protocol";
@@ -31,6 +32,7 @@ export interface RelayPeerExecutionResult {
   page?: RelayActionResult["page"];
   trace: RelayActionResult["trace"];
   screenshotPaths?: string[];
+  screenshotPayloads?: RelayScreenshotPayload[];
   artifactIds?: string[];
   errorMessage?: string;
 }
@@ -98,6 +100,7 @@ export class BrowserRelayPeerRuntime {
       ...(execution.page ? { page: execution.page } : {}),
       trace: execution.trace,
       screenshotPaths: execution.screenshotPaths ?? [],
+      screenshotPayloads: execution.screenshotPayloads ?? [],
       artifactIds: execution.artifactIds ?? [],
       ...(execution.errorMessage ? { errorMessage: execution.errorMessage } : {}),
     });

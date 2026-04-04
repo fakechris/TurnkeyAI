@@ -22,12 +22,13 @@ export class ChromeRelayActionExecutor {
     }
 
     const trace: BrowserActionTrace[] = [];
-    const postOpenActions = [];
+    const pendingActions = [];
+    const screenshotPayloads = [];
 
     for (let index = 0; index < request.actions.length; index += 1) {
       const action = request.actions[index]!;
       if (action.kind !== "open") {
-        postOpenActions.push(action);
+        pendingActions.push(action);
         continue;
       }
       const startedAt = Date.now();
@@ -57,12 +58,11 @@ export class ChromeRelayActionExecutor {
       throw new Error("relay action executor could not resolve a target tab");
     }
 
-    const contentScriptResponse = postOpenActions.length
-      ? await this.platform.sendTabMessage<RelayContentScriptExecuteResponse>(activeTab.id, {
-          type: "turnkeyai.relay.execute",
-          actionRequestId: request.actionRequestId,
-          actions: postOpenActions,
-        })
+    const pageActions = pendingActions.filter((action) => action.kind !== "screenshot");
+    const screenshotActions = pendingActions.filter((action) => action.kind === "screenshot");
+
+    const contentScriptResponse = pageActions.length
+      ? await this.sendContentScriptActions(activeTab.id, request.actionRequestId, pageActions)
       : null;
 
     if (contentScriptResponse && !contentScriptResponse.ok) {
@@ -73,21 +73,54 @@ export class ChromeRelayActionExecutor {
         status: "failed" as const,
         trace: [...trace, ...contentScriptResponse.trace],
         screenshotPaths: [],
+        screenshotPayloads: [],
         artifactIds: [],
         errorMessage: contentScriptResponse.errorMessage ?? "content script execution failed",
       };
     }
 
+    for (let index = 0; index < screenshotActions.length; index += 1) {
+      const action = screenshotActions[index]!;
+      const startedAt = Date.now();
+      const dataUrl = await this.platform.captureVisibleTab(activeTab.windowId, { format: "png" });
+      const [, dataBase64 = ""] = /^data:image\/png;base64,(.+)$/.exec(dataUrl) ?? [];
+      screenshotPayloads.push({
+        ...(action.label ? { label: action.label } : {}),
+        mimeType: "image/png",
+        dataBase64,
+      });
+      trace.push({
+        stepId: `${request.taskId}:relay-screenshot:${index + 1}`,
+        kind: "screenshot",
+        startedAt,
+        completedAt: Date.now(),
+        status: "ok",
+        input: {
+          label: action.label ?? null,
+        },
+        output: {
+          mimeType: "image/png",
+          dataBase64Length: dataBase64.length,
+        },
+      });
+    }
+
+    const finalSnapshotResponse =
+      contentScriptResponse?.page || !activeTab.id
+        ? contentScriptResponse
+        : await this.sendContentScriptActions(activeTab.id, request.actionRequestId, [{ kind: "snapshot", note: "final-relay-state" }]);
+
     return {
       relayTargetId: formatRelayTargetId(activeTab.id),
-      url: contentScriptResponse?.page?.finalUrl ?? activeTab.url ?? "",
-      ...(contentScriptResponse?.page?.title || activeTab.title
-        ? { title: contentScriptResponse?.page?.title ?? activeTab.title }
+      url: finalSnapshotResponse?.page?.finalUrl ?? activeTab.url ?? "",
+      ...(finalSnapshotResponse?.page?.title || activeTab.title
+        ? { title: finalSnapshotResponse?.page?.title ?? activeTab.title }
         : {}),
       status: "completed" as const,
-      ...(contentScriptResponse?.page ? { page: contentScriptResponse.page } : {}),
-      trace: [...trace, ...(contentScriptResponse?.trace ?? [])],
+      ...(finalSnapshotResponse?.page ? { page: finalSnapshotResponse.page } : {}),
+      trace: [...trace, ...(finalSnapshotResponse?.trace ?? [])],
       screenshotPaths: [],
+      screenshotPayloads,
       artifactIds: [],
     };
   }
@@ -102,5 +135,17 @@ export class ChromeRelayActionExecutor {
 
   private hasOpenAction(request: RelayActionRequest): boolean {
     return request.actions.some((action) => action.kind === "open");
+  }
+
+  private sendContentScriptActions(
+    tabId: number,
+    actionRequestId: string,
+    actions: RelayActionRequest["actions"]
+  ): Promise<RelayContentScriptExecuteResponse> {
+    return this.platform.sendTabMessage<RelayContentScriptExecuteResponse>(tabId, {
+      type: "turnkeyai.relay.execute",
+      actionRequestId,
+      actions,
+    });
   }
 }

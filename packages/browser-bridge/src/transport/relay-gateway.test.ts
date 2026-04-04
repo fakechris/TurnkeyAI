@@ -94,6 +94,7 @@ test("relay gateway dispatches queued action requests and resolves submitted res
     },
     trace,
     screenshotPaths: [],
+    screenshotPayloads: [],
     artifactIds: [],
   });
 

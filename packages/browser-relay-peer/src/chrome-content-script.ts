@@ -1,4 +1,5 @@
 import type { BrowserActionTrace, BrowserSnapshotResult } from "@turnkeyai/core-types/team";
+import type { RelayExecutableBrowserAction } from "@turnkeyai/browser-bridge/transport/relay-protocol";
 
 import type { ChromeRuntimeLike } from "./chrome-extension-types";
 import {
@@ -29,6 +30,9 @@ interface WindowLike {
   location?: {
     href?: string;
   };
+  scrollY?: number;
+  pageYOffset?: number;
+  scrollBy?(options: { top: number; behavior: "instant" | "smooth" }): void;
 }
 
 export interface ChromeRelayContentScriptEnvironment {
@@ -60,7 +64,7 @@ export function registerChromeRelayContentScript(
 
 export async function executeChromeRelayContentScriptActions(
   environment: ChromeRelayContentScriptEnvironment,
-  actions: ReadonlyArray<{ kind: "snapshot" | "click" | "type" | "open"; [key: string]: unknown }>
+  actions: ReadonlyArray<RelayExecutableBrowserAction>
 ): Promise<RelayContentScriptExecuteResponse> {
   const trace: BrowserActionTrace[] = [];
   let latestSnapshot: BrowserSnapshotResult | undefined;
@@ -151,19 +155,72 @@ export async function executeChromeRelayContentScriptActions(
         continue;
       }
 
-      trace.push({
-        stepId,
-        kind: "open",
-        startedAt,
-        completedAt: Date.now(),
-        status: "ok",
-        input: {
-          url: typeof action.url === "string" ? action.url : null,
-        },
-        output: {
-          finalUrl: environment.window.location?.href ?? "",
-        },
-      });
+      if (action.kind === "scroll") {
+        const amount = typeof action.amount === "number" && Number.isFinite(action.amount) ? action.amount : 800;
+        const delta = action.direction === "up" ? amount * -1 : amount;
+        environment.window.scrollBy?.({ top: delta, behavior: "instant" });
+        const nextScrollY =
+          typeof environment.window.scrollY === "number"
+            ? environment.window.scrollY
+            : typeof environment.window.pageYOffset === "number"
+              ? environment.window.pageYOffset
+              : delta;
+        latestSnapshot = captureSnapshot(environment);
+        trace.push({
+          stepId,
+          kind: "scroll",
+          startedAt,
+          completedAt: Date.now(),
+          status: "ok",
+          input: {
+            direction: action.direction === "up" ? "up" : "down",
+            amount,
+          },
+          output: {
+            finalUrl: latestSnapshot.finalUrl,
+            scrollY: nextScrollY,
+          },
+        });
+        continue;
+      }
+
+      if (action.kind === "console") {
+        const probe = action.probe === "interactive-summary" ? "interactive-summary" : "page-metadata";
+        const result = executeConsoleProbe(environment, probe);
+        latestSnapshot = captureSnapshot(environment);
+        trace.push({
+          stepId,
+          kind: "console",
+          startedAt,
+          completedAt: Date.now(),
+          status: "ok",
+          input: {
+            probe,
+          },
+          output: {
+            finalUrl: latestSnapshot.finalUrl,
+            result,
+          },
+        });
+        continue;
+      }
+
+      if (action.kind === "open") {
+        trace.push({
+          stepId,
+          kind: "open",
+          startedAt,
+          completedAt: Date.now(),
+          status: "ok",
+          input: {
+            url: action.url,
+          },
+          output: {
+            finalUrl: environment.window.location?.href ?? "",
+          },
+        });
+        continue;
+      }
     } catch (error) {
       trace.push({
         stepId,
@@ -220,6 +277,33 @@ function captureSnapshot(environment: ChromeRelayContentScriptEnvironment): Brow
     statusCode: 200,
     interactives,
   };
+}
+
+function executeConsoleProbe(
+  environment: ChromeRelayContentScriptEnvironment,
+  probe: "page-metadata" | "interactive-summary"
+): unknown {
+  if (probe === "page-metadata") {
+    return {
+      title: environment.document.title ?? "",
+      href: environment.window.location?.href ?? "",
+      interactiveCount:
+        environment.document.querySelectorAll?.(
+          "a,button,input,textarea,select,[role='button'],[contenteditable='true']"
+        ).length ?? 0,
+    };
+  }
+
+  return (
+    environment.document
+      .querySelectorAll?.("a,button,input,textarea,select,[role='button'],[contenteditable='true']")
+      .slice(0, 20)
+      .map((element) => ({
+        tagName: (element.tagName ?? "div").toLowerCase(),
+        text: extractElementText(element).slice(0, 120),
+        ariaLabel: element.getAttribute?.("aria-label"),
+      })) ?? []
+  );
 }
 
 function resolveElement(

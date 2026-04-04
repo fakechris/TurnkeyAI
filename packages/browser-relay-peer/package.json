@@ -1,7 +1,11 @@
 {
   "name": "@turnkeyai/browser-relay-peer",
   "private": true,
+  "version": "0.1.0",
   "type": "module",
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && tsx scripts/write-extension-manifest.ts && tsx scripts/verify-extension-dist.ts"
+  },
   "exports": {
     "./daemon-relay-client": "./src/daemon-relay-client.ts",
     "./peer-runtime": "./src/peer-runtime.ts",

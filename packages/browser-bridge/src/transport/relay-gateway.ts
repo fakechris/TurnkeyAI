@@ -227,5 +227,13 @@ export class RelayGateway {
 export function isRelayExecutableAction(
   action: BrowserTaskAction
 ): action is RelayExecutableBrowserAction {
-  return action.kind === "open" || action.kind === "snapshot" || action.kind === "click" || action.kind === "type";
+  return (
+    action.kind === "open" ||
+    action.kind === "snapshot" ||
+    action.kind === "click" ||
+    action.kind === "type" ||
+    action.kind === "scroll" ||
+    action.kind === "console" ||
+    action.kind === "screenshot"
+  );
 }

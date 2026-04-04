@@ -75,6 +75,7 @@ test("daemon relay client can pull and submit action requests", async () => {
         },
         trace: [],
         screenshotPaths: [],
+        screenshotPayloads: [],
         artifactIds: [],
       } satisfies RelayActionResult);
     },
@@ -92,6 +93,7 @@ test("daemon relay client can pull and submit action requests", async () => {
     status: "completed",
     trace: [],
     screenshotPaths: [],
+    screenshotPayloads: [],
     artifactIds: [],
   });
   assert.equal(result.peerId, "peer-1");

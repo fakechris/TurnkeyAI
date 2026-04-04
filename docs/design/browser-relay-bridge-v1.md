@@ -14,6 +14,7 @@
 - transport mode 约束：`relay / direct-cdp / local`
 - daemon 侧 relay control plane：peer register、heartbeat、target report、action pull/result submit
 - browser-side peer 第一版：service worker runtime、peer loop、tab observer、content-script executor
+- extension bundling 第一版：可生成 `dist/extension/manifest.json`、`service-worker.js`、`content-script.js`
 
 因此，`Browser Relay Bridge v1` 的目标不是重做 browser runtime，而是：
 
@@ -254,10 +255,14 @@ v1 只要求这 4 个动作先打通：
   - [chrome-content-script.ts](../../packages/browser-relay-peer/src/chrome-content-script.ts)
   - [chrome-content-script-protocol.ts](../../packages/browser-relay-peer/src/chrome-content-script-protocol.ts)
   - [chrome-extension-manifest.ts](../../packages/browser-relay-peer/src/chrome-extension-manifest.ts)
+- extension artifact 第一版已存在：
+  - [package.json](../../packages/browser-relay-peer/package.json)
+  - [tsup.config.ts](../../packages/browser-relay-peer/tsup.config.ts)
+  - [write-extension-manifest.ts](../../packages/browser-relay-peer/scripts/write-extension-manifest.ts)
 
 ### 6.2 还没完成
 
-1. 可安装的 Chrome extension bundling / `dist/extension`
+1. Chrome 侧真实安装与本地连通说明、安装 smoke 和自检
 2. `scroll / console / screenshot` 动作补齐
 3. daemon <-> extension 的更完整端到端模拟
 4. `direct-cdp-adapter`
@@ -306,6 +311,7 @@ v1 只要求这 4 个动作先打通：
 3. 安装说明与本地连通性验证
 
 状态：未开始
+状态：第一版产物已落地，继续补安装与连通验证
 
 ### Phase E: Action Parity And Diagnostics
 

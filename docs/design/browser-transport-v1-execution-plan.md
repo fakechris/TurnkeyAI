@@ -92,7 +92,7 @@
 
 ### M4. Installable Extension Artifact
 
-状态：待开发
+状态：进行中
 
 交付物：
 
@@ -101,6 +101,18 @@
 3. `dist/extension/content-script.js`
 4. 必要 icons / static assets
 5. 安装和本地连通说明
+
+当前已完成：
+
+1. `tsup` bundling 配置
+2. manifest 生成脚本
+3. `packages/browser-relay-peer/dist/extension/*` 第一版产物
+
+当前未完成：
+
+1. 安装 smoke / 连通 smoke
+2. icons / static assets
+3. 面向开发者的安装说明
 
 验收标准：
 

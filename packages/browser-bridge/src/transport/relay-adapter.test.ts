@@ -81,6 +81,7 @@ test("relay browser adapter can attach to a reported target and execute snapshot
       },
       trace,
       screenshotPaths: [],
+      screenshotPayloads: [],
       artifactIds: [],
     });
 
@@ -97,6 +98,90 @@ test("relay browser adapter can attach to a reported target and execute snapshot
     const history = await adapter.getSessionHistory({ browserSessionId: result.sessionId });
     assert.equal(history.length, 1);
     assert.equal(history[0]?.targetResolution, "attach");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("relay browser adapter persists screenshot payloads returned by a relay peer", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "relay-browser-adapter-"));
+
+  try {
+    const adapter = new RelayBrowserAdapter({
+      artifactRootDir: path.join(tempDir, "artifacts"),
+      stateRootDir: path.join(tempDir, "state"),
+      relay: {
+        relayPeerId: "peer-1",
+      },
+    });
+    const gateway = adapter.getRelayGateway();
+    gateway.registerPeer({
+      peerId: "peer-1",
+      capabilities: ["snapshot", "screenshot"],
+    });
+    gateway.reportTargets("peer-1", [
+      {
+        relayTargetId: "tab-1",
+        url: "https://example.com/pricing",
+        title: "Pricing",
+        status: "attached",
+      },
+    ]);
+
+    const resultPromise = adapter.spawnSession({
+      taskId: "task-2",
+      threadId: "thread-1",
+      instructions: "Capture screenshot",
+      actions: [{ kind: "screenshot", label: "final" }],
+      ownerType: "thread",
+      ownerId: "thread-1",
+      profileOwnerType: "thread",
+      profileOwnerId: "thread-1",
+    });
+
+    const request = await waitForActionRequest(() => gateway.pullNextActionRequest("peer-1"));
+    gateway.submitActionResult({
+      actionRequestId: request.actionRequestId,
+      peerId: "peer-1",
+      browserSessionId: request.browserSessionId,
+      taskId: request.taskId,
+      relayTargetId: "tab-1",
+      url: "https://example.com/pricing",
+      title: "Pricing",
+      status: "completed",
+      page: {
+        requestedUrl: "https://example.com/pricing",
+        finalUrl: "https://example.com/pricing",
+        title: "Pricing",
+        textExcerpt: "Pricing page",
+        statusCode: 200,
+        interactives: [],
+      },
+      trace: [
+        {
+          stepId: "task-2:relay-screenshot:1",
+          kind: "screenshot",
+          startedAt: 1,
+          completedAt: 2,
+          status: "ok",
+          input: { label: "final" },
+        },
+      ],
+      screenshotPaths: [],
+      screenshotPayloads: [
+        {
+          label: "final",
+          mimeType: "image/png",
+          dataBase64: "c2NyZWVuc2hvdA==",
+        },
+      ],
+      artifactIds: [],
+    });
+
+    const result = await resultPromise;
+    assert.equal(result.screenshotPaths.length, 1);
+    assert.match(result.screenshotPaths[0] ?? "", /final\.png$/);
+    assert.equal(result.artifactIds.some((artifactId) => artifactId.includes("relay-screenshot")), true);
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

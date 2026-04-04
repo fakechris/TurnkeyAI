@@ -28,6 +28,7 @@ import { FileBrowserProfileStore } from "../session/file-browser-profile-store";
 import { FileBrowserSessionStore } from "../session/file-browser-session-store";
 import { FileBrowserTargetStore } from "../session/file-browser-target-store";
 import { RelayGateway, isRelayExecutableAction } from "./relay-gateway";
+import type { RelayActionResult } from "./relay-protocol";
 import type {
   BrowserTransportAdapter,
   BrowserTransportFactoryOptions,
@@ -293,6 +294,13 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
       currentTarget = target;
 
       const artifactIds = [...relayResult.artifactIds];
+      const persistedScreenshots = await this.persistScreenshotArtifacts({
+        task,
+        sessionId,
+        targetId: target.targetId,
+        screenshotPayloads: relayResult.screenshotPayloads ?? [],
+      });
+      artifactIds.push(...persistedScreenshots.artifactIds);
       const persistedSnapshotArtifactId = await this.persistSnapshotArtifact({
         task,
         sessionId,
@@ -310,7 +318,7 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
         resumeMode,
         targetResolution,
         page: relayResult.page,
-        screenshotPaths: relayResult.screenshotPaths,
+        screenshotPaths: [...relayResult.screenshotPaths, ...persistedScreenshots.screenshotPaths],
         trace: relayResult.trace,
         artifactIds,
       };
@@ -423,6 +431,54 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
     return artifactId;
   }
 
+  private async persistScreenshotArtifacts(input: {
+    task: BrowserTaskRequest;
+    sessionId: string;
+    targetId: string;
+    screenshotPayloads: RelayActionResult["screenshotPayloads"];
+  }): Promise<{ screenshotPaths: string[]; artifactIds: string[] }> {
+    if (!input.screenshotPayloads.length) {
+      return {
+        screenshotPaths: [],
+        artifactIds: [],
+      };
+    }
+
+    const taskDir = path.join(this.artifactRootDir, input.sessionId, encodeURIComponent(input.task.taskId));
+    await mkdir(taskDir, { recursive: true });
+
+    const screenshotPaths: string[] = [];
+    const artifactIds: string[] = [];
+
+    for (let index = 0; index < input.screenshotPayloads.length; index += 1) {
+      const payload = input.screenshotPayloads[index]!;
+      const label = sanitizeLabel(payload.label ?? `relay-screenshot-${index + 1}`);
+      const screenshotPath = path.join(taskDir, `${String(index + 1).padStart(2, "0")}-${label}.png`);
+      await writeFile(screenshotPath, Buffer.from(payload.dataBase64, "base64"));
+      screenshotPaths.push(screenshotPath);
+
+      const artifactId = `${input.task.taskId}:relay-screenshot:${index + 1}`;
+      artifactIds.push(artifactId);
+      await this.artifactStore.put({
+        artifactId,
+        browserSessionId: input.sessionId,
+        targetId: input.targetId,
+        type: "screenshot",
+        path: screenshotPath,
+        createdAt: Date.now(),
+        metadata: {
+          mimeType: payload.mimeType,
+          label: payload.label ?? null,
+        },
+      });
+    }
+
+    return {
+      screenshotPaths,
+      artifactIds,
+    };
+  }
+
   private async appendHistoryEntry(input: {
     dispatchMode: BrowserSessionDispatchMode;
     task: BrowserTaskRequest;
@@ -506,6 +562,10 @@ function toSnapshotRefEntry(item: BrowserSnapshotResult["interactives"][number],
     ...(item.textAnchors ? { textAnchors: item.textAnchors } : {}),
     ordinal: index + 1,
   };
+}
+
+function sanitizeLabel(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
 }
 
 function summarizeBrowserHistorySuccess(

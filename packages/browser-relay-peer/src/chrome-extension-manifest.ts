@@ -1,6 +1,7 @@
 export interface ChromeRelayExtensionManifestOptions {
   name?: string;
   version?: string;
+  description?: string;
   matches: string[];
   daemonOrigins?: string[];
   permissions?: string[];
@@ -10,6 +11,7 @@ export interface ChromeExtensionManifest {
   manifest_version: 3;
   name: string;
   version: string;
+  description: string;
   background: {
     service_worker: string;
     type: "module";
@@ -42,8 +44,11 @@ export function buildChromeRelayExtensionManifest(
     manifest_version: 3,
     name: options.name?.trim() || "TurnkeyAI Relay Bridge",
     version: options.version?.trim() || "0.1.0",
+    description:
+      options.description?.trim() ||
+      "Attach TurnkeyAI to your existing Chrome tabs through a local relay daemon.",
     background: {
-      service_worker: "dist/service-worker.js",
+      service_worker: "service-worker.js",
       type: "module",
     },
     permissions,
@@ -51,7 +56,7 @@ export function buildChromeRelayExtensionManifest(
     content_scripts: [
       {
         matches,
-        js: ["dist/content-script.js"],
+        js: ["content-script.js"],
         run_at: "document_idle",
         all_frames: true,
       },

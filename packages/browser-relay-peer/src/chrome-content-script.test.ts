@@ -3,9 +3,10 @@ import test from "node:test";
 
 import { executeChromeRelayContentScriptActions } from "./chrome-content-script";
 
-test("chrome content script executes snapshot, click, and type actions against a document-like environment", async () => {
+test("chrome content script executes snapshot, click, type, scroll, and console actions against a document-like environment", async () => {
   let clicked = false;
   let dispatched = 0;
+  let scrollTop = 0;
   const button = createElement("button", "Approve", {
     click() {
       clicked = true;
@@ -22,6 +23,11 @@ test("chrome content script executes snapshot, click, and type actions against a
       location: {
         href: "https://example.com/workflow",
       },
+      scrollY: 0,
+      scrollBy({ top }: { top: number }) {
+        scrollTop += top;
+        this.scrollY = scrollTop;
+      },
     },
     document: createDocument([button, input], "Workflow"),
   };
@@ -30,14 +36,18 @@ test("chrome content script executes snapshot, click, and type actions against a
     { kind: "snapshot", note: "before" },
     { kind: "click", text: "Approve" },
     { kind: "type", selectors: ["input"], text: "hello", submit: true },
+    { kind: "scroll", direction: "down", amount: 240 },
+    { kind: "console", probe: "page-metadata" },
   ]);
 
   assert.equal(response.ok, true);
   assert.equal(response.page?.finalUrl, "https://example.com/workflow");
-  assert.equal(response.trace.length, 3);
+  assert.equal(response.trace.length, 5);
   assert.equal(clicked, true);
   assert.equal(input.value, "hello");
   assert.equal(dispatched >= 2, true);
+  assert.equal(scrollTop, 240);
+  assert.equal(response.trace[4]?.kind, "console");
 });
 
 test("chrome content script returns a failed response when the target element cannot be resolved", async () => {

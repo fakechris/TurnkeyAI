@@ -1743,6 +1743,11 @@ const server = http.createServer(async (req, res) => {
         page?: BrowserTaskResult["page"];
         trace?: BrowserTaskResult["trace"];
         screenshotPaths?: string[];
+        screenshotPayloads?: Array<{
+          label?: string;
+          mimeType?: string;
+          dataBase64?: string;
+        }>;
         artifactIds?: string[];
         errorMessage?: string;
       }>(req);
@@ -1772,6 +1777,21 @@ const server = http.createServer(async (req, res) => {
           ...(body.page ? { page: body.page } : {}),
           trace: Array.isArray(body.trace) ? body.trace : [],
           screenshotPaths: Array.isArray(body.screenshotPaths) ? body.screenshotPaths : [],
+          screenshotPayloads: Array.isArray(body.screenshotPayloads)
+            ? body.screenshotPayloads
+                .filter(
+                  (payload): payload is { label?: string; mimeType: string; dataBase64: string } =>
+                    Boolean(payload) &&
+                    typeof payload === "object" &&
+                    typeof payload.mimeType === "string" &&
+                    typeof payload.dataBase64 === "string"
+                )
+                .map((payload) => ({
+                  ...(payload.label ? { label: payload.label } : {}),
+                  mimeType: payload.mimeType,
+                  dataBase64: payload.dataBase64,
+                }))
+            : [],
           artifactIds: Array.isArray(body.artifactIds) ? body.artifactIds : [],
           ...(body.errorMessage ? { errorMessage: body.errorMessage } : {}),
         })

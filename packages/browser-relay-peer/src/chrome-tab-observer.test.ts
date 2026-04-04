@@ -63,5 +63,8 @@ function fakePlatform(input: { tabs: Array<{ id: number; url: string; title: str
     async sendTabMessage() {
       throw new Error("unused");
     },
+    async captureVisibleTab() {
+      return "data:image/png;base64,";
+    },
   };
 }

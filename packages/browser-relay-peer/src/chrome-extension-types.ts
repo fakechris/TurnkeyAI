@@ -21,6 +21,7 @@ export interface ChromeRuntimeLike {
 
 export interface ChromeTabLike {
   id?: number;
+  windowId?: number;
   url?: string;
   title?: string;
   status?: "complete" | "loading";
@@ -44,6 +45,7 @@ export interface ChromeExtensionPlatform {
     active?: boolean;
   }): Promise<ChromeTabLike>;
   sendTabMessage<T>(tabId: number, message: unknown): Promise<T>;
+  captureVisibleTab(windowId?: number, options?: { format?: "png" | "jpeg" }): Promise<string>;
 }
 
 export function getChromeExtensionPlatform(): ChromeExtensionPlatform {
@@ -69,6 +71,11 @@ export function getChromeExtensionPlatform(): ChromeExtensionPlatform {
         callback: (tab?: ChromeTabLike) => void
       ): void;
       sendMessage(tabId: number, message: unknown, callback: (response: unknown) => void): void;
+      captureVisibleTab(
+        windowId: number | undefined,
+        options: { format?: "png" | "jpeg" } | undefined,
+        callback: (dataUrl?: string) => void
+      ): void;
     };
     runtimeLastError?: { message?: string };
   } | undefined;
@@ -113,6 +120,11 @@ export function getChromeExtensionPlatform(): ChromeExtensionPlatform {
     },
     sendTabMessage(tabId, message) {
       return withCallback((callback) => chromeLike.tabs!.sendMessage(tabId, message, callback as (response: unknown) => void));
+    },
+    captureVisibleTab(windowId, options) {
+      return withCallback((callback) =>
+        chromeLike.tabs!.captureVisibleTab(windowId, options, (dataUrl) => callback(dataUrl ?? ""))
+      );
     },
   };
 }

@@ -6,8 +6,14 @@ import type {
 
 export type RelayExecutableBrowserAction = Extract<
   BrowserTaskAction,
-  { kind: "open" | "snapshot" | "click" | "type" }
+  { kind: "open" | "snapshot" | "click" | "type" | "scroll" | "console" | "screenshot" }
 >;
+
+export interface RelayScreenshotPayload {
+  label?: string;
+  mimeType: string;
+  dataBase64: string;
+}
 
 export interface RelayPeerRegistration {
   peerId: string;
@@ -62,6 +68,7 @@ export interface RelayActionResult {
   page?: BrowserSnapshotResult;
   trace: BrowserActionTrace[];
   screenshotPaths: string[];
+  screenshotPayloads: RelayScreenshotPayload[];
   artifactIds: string[];
   errorMessage?: string;
 }

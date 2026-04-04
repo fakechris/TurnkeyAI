@@ -126,6 +126,30 @@ npm test
 
 主干 PR 的基础 CI 当前会运行 `npm run typecheck`、`npm test` 和 `npm run build`。
 
+如果要构建 Chrome relay extension 产物：
+
+```bash
+npm run build:relay-extension
+```
+
+产物会输出到：
+
+```text
+packages/browser-relay-peer/dist/extension
+```
+
+当前这是未打包的 Chrome extension 目录，包含：
+
+- `manifest.json`
+- `service-worker.js`
+- `content-script.js`
+
+配合本地 daemon 走 relay transport 时，可以显式设置：
+
+```bash
+TURNKEYAI_BROWSER_TRANSPORT=relay npm run daemon
+```
+
 启动本地 daemon：
 
 ```bash
@@ -230,6 +254,8 @@ npx @turnkeyai/cli tui
 - [Runtime Core v2 Plan](./docs/design/runtime-core-v2-plan.md)
 - [Project Foundation](./docs/design/project-foundation.md)
 - [Browser Session And Worker Protocol](./docs/design/browser-session-and-worker-protocol.md)
+- [Browser Relay Bridge v1](./docs/design/browser-relay-bridge-v1.md)
+- [Browser Transport v1 Execution Plan](./docs/design/browser-transport-v1-execution-plan.md)
 - [Prompt Context Compression Design](./docs/design/prompt-context-compression-design.md)
 - [Model Catalog And Chain Config](./docs/design/model-catalog-and-chain-config.md)
 

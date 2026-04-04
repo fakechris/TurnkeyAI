@@ -24,6 +24,7 @@ test("relay peer loop schedules active, idle, and error retries through the sche
             status: "completed",
             trace: [],
             screenshotPaths: [],
+            screenshotPayloads: [],
             artifactIds: [],
           };
         }
