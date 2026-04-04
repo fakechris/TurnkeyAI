@@ -496,8 +496,18 @@ while (true) {
       continue;
     }
 
+    if (command === "validation-profiles") {
+      await handleValidationProfilesCommand();
+      continue;
+    }
+
     if (command === "validation-run") {
       await handleValidationRunCommand(args);
+      continue;
+    }
+
+    if (command === "validation-profile-run") {
+      await handleValidationProfileRunCommand(args);
       continue;
     }
 
@@ -674,7 +684,9 @@ function printHelp(): void {
   console.log("  soak-series [cycles] [suite[:item] ...]  run multi-cycle validation soak across selected suites");
   console.log("  release-verify                        verify packaged CLI and npm publish dry-run readiness");
   console.log("  validation-cases                      list unified validation suites and items");
+  console.log("  validation-profiles                   list fixed validation hardening profiles");
   console.log("  validation-run [suite[:item] ...]     run unified validation suites or individual items");
+  console.log("  validation-profile-run <profileId>    run a fixed hardening profile (smoke/nightly/prerelease/weekly)");
   console.log("  replay-incidents [limit] [action]     show replay incidents for current thread");
   console.log("  replay-group <groupId>                show one grouped replay task with its related replays");
   console.log("  replay-bundle <groupId>               show one incident bundle with timeline");
@@ -2102,6 +2114,24 @@ async function handleValidationCasesCommand(): Promise<void> {
   );
 }
 
+async function handleValidationProfilesCommand(): Promise<void> {
+  printValidationProfileList(
+    (await getJson("/validation-profiles")) as {
+      totalProfiles: number;
+      profiles: Array<{
+        profileId: "smoke" | "nightly" | "prerelease" | "weekly";
+        title: string;
+        summary: string;
+        focusAreas: string[];
+        validationSelectors: string[];
+        includeReleaseReadiness: boolean;
+        soakSeriesCycles?: number;
+        soakSeriesSelectors?: string[];
+      }>;
+    }
+  );
+}
+
 async function handleValidationRunCommand(raw: string): Promise<void> {
   const selectors = raw.split(/\s+/).filter(Boolean);
   try {
@@ -3342,6 +3372,90 @@ function printRealWorldRunResult(payload: {
   }
 }
 
+async function handleValidationProfileRunCommand(raw: string): Promise<void> {
+  const profileId = raw.trim();
+  if (!profileId) {
+    console.log("usage: validation-profile-run <smoke|nightly|prerelease|weekly>");
+    return;
+  }
+
+  try {
+    const payload = await postJson("/validation-profiles/run", { profileId });
+    printValidationProfileRunResult(
+      payload as {
+        profileId: "smoke" | "nightly" | "prerelease" | "weekly";
+        title: string;
+        summary: string;
+        focusAreas: string[];
+        validationSelectors: string[];
+        includeReleaseReadiness: boolean;
+        soakSeriesCycles?: number;
+        soakSeriesSelectors?: string[];
+        status: "passed" | "failed";
+        durationMs: number;
+        totalStages: number;
+        passedStages: number;
+        failedStages: number;
+        issues: Array<{
+          issueId: string;
+          kind: "validation-item" | "release-check" | "soak-suite";
+          stageId: "validation-run" | "release-readiness" | "soak-series";
+          scope: string;
+          summary: string;
+        }>;
+        stages: Array<
+          | {
+              stageId: "validation-run";
+              title: string;
+              status: "passed" | "failed";
+              durationMs: number;
+              selectors: string[];
+              result: {
+                totalSuites: number;
+                passedSuites: number;
+                failedSuites: number;
+                totalItems: number;
+                passedItems: number;
+                failedItems: number;
+                totalCases: number;
+                passedCases: number;
+                failedCases: number;
+              };
+            }
+          | {
+              stageId: "release-readiness";
+              title: string;
+              status: "passed" | "failed";
+              durationMs: number;
+              result: {
+                totalChecks: number;
+                passedChecks: number;
+                failedChecks: number;
+              };
+            }
+          | {
+              stageId: "soak-series";
+              title: string;
+              status: "passed" | "failed";
+              durationMs: number;
+              cycles: number;
+              selectors: string[];
+              result: {
+                totalCycles: number;
+                passedCycles: number;
+                failedCycles: number;
+                totalCases: number;
+                failedCases: number;
+              };
+            }
+        >;
+      }
+    );
+  } catch (error) {
+    console.log(`validation profile failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 function printValidationSuiteList(payload: {
   totalSuites: number;
   totalItems: number;
@@ -3371,6 +3485,34 @@ function printValidationSuiteList(payload: {
       if (item.caseIds && item.caseIds.length > 0) {
         console.log(`    cases: ${item.caseIds.join(", ")}`);
       }
+    }
+  }
+}
+
+function printValidationProfileList(payload: {
+  totalProfiles: number;
+  profiles: Array<{
+    profileId: "smoke" | "nightly" | "prerelease" | "weekly";
+    title: string;
+    summary: string;
+    focusAreas: string[];
+    validationSelectors: string[];
+    includeReleaseReadiness: boolean;
+    soakSeriesCycles?: number;
+    soakSeriesSelectors?: string[];
+  }>;
+}): void {
+  console.log(`Validation Profiles: ${payload.totalProfiles}`);
+  for (const profile of payload.profiles) {
+    console.log(`- ${profile.profileId}  ${profile.title}`);
+    console.log(`  ${profile.summary}`);
+    console.log(`  focus: ${profile.focusAreas.join(", ")}`);
+    console.log(`  validation selectors: ${profile.validationSelectors.join(", ")}`);
+    console.log(`  release readiness: ${profile.includeReleaseReadiness ? "yes" : "no"}`);
+    if (profile.soakSeriesCycles && profile.soakSeriesCycles > 0) {
+      console.log(
+        `  soak series: cycles=${profile.soakSeriesCycles} selectors=${(profile.soakSeriesSelectors ?? []).join(", ")}`
+      );
     }
   }
 }
@@ -3435,6 +3577,108 @@ function printValidationRunResult(payload: {
           console.log(`      ${detail}`);
         }
       }
+    }
+  }
+}
+
+function printValidationProfileRunResult(payload: {
+  profileId: "smoke" | "nightly" | "prerelease" | "weekly";
+  title: string;
+  summary: string;
+  focusAreas: string[];
+  validationSelectors: string[];
+  includeReleaseReadiness: boolean;
+  soakSeriesCycles?: number;
+  soakSeriesSelectors?: string[];
+  status: "passed" | "failed";
+  durationMs: number;
+  totalStages: number;
+  passedStages: number;
+  failedStages: number;
+  issues: Array<{
+    issueId: string;
+    kind: "validation-item" | "release-check" | "soak-suite";
+    stageId: "validation-run" | "release-readiness" | "soak-series";
+    scope: string;
+    summary: string;
+  }>;
+  stages: Array<
+    | {
+        stageId: "validation-run";
+        title: string;
+        status: "passed" | "failed";
+        durationMs: number;
+        selectors: string[];
+        result: {
+          totalSuites: number;
+          passedSuites: number;
+          failedSuites: number;
+          totalItems: number;
+          passedItems: number;
+          failedItems: number;
+          totalCases: number;
+          passedCases: number;
+          failedCases: number;
+        };
+      }
+    | {
+        stageId: "release-readiness";
+        title: string;
+        status: "passed" | "failed";
+        durationMs: number;
+        result: {
+          totalChecks: number;
+          passedChecks: number;
+          failedChecks: number;
+        };
+      }
+    | {
+        stageId: "soak-series";
+        title: string;
+        status: "passed" | "failed";
+        durationMs: number;
+        cycles: number;
+        selectors: string[];
+        result: {
+          totalCycles: number;
+          passedCycles: number;
+          failedCycles: number;
+          totalCases: number;
+          failedCases: number;
+        };
+      }
+  >;
+}): void {
+  console.log(
+    `Validation profile: ${payload.profileId}  status=${payload.status}  stages=${payload.passedStages}/${payload.totalStages}  issues=${payload.issues.length}  durationMs=${payload.durationMs}`
+  );
+  console.log(`  ${payload.title}`);
+  console.log(`  ${payload.summary}`);
+  console.log(`  focus: ${payload.focusAreas.join(", ")}`);
+  for (const stage of payload.stages) {
+    if (stage.stageId === "validation-run") {
+      console.log(
+        `- validation-run  status=${stage.status}  suites=${stage.result.passedSuites}/${stage.result.totalSuites}  items=${stage.result.passedItems}/${stage.result.totalItems}  cases=${stage.result.passedCases}/${stage.result.totalCases}  durationMs=${stage.durationMs}`
+      );
+      console.log(`  selectors: ${stage.selectors.join(", ")}`);
+      continue;
+    }
+    if (stage.stageId === "release-readiness") {
+      console.log(
+        `- release-readiness  status=${stage.status}  checks=${stage.result.passedChecks}/${stage.result.totalChecks}  durationMs=${stage.durationMs}`
+      );
+      continue;
+    }
+    console.log(
+      `- soak-series  status=${stage.status}  cycles=${stage.result.passedCycles}/${stage.result.totalCycles}  cases=${stage.result.totalCases - stage.result.failedCases}/${stage.result.totalCases}  durationMs=${stage.durationMs}`
+    );
+    console.log(`  selectors: ${stage.selectors.join(", ")}`);
+  }
+  if (payload.issues.length > 0) {
+    console.log("Issues:");
+    for (const issue of payload.issues) {
+      console.log(`- ${issue.stageId}  ${issue.kind}  ${issue.scope}`);
+      console.log(`  ${issue.summary}`);
     }
   }
 }

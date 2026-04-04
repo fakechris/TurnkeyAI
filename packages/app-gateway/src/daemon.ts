@@ -108,6 +108,11 @@ import {
   ValidationSelectorError,
 } from "@turnkeyai/qc-runtime/validation-suite";
 import { runValidationSoakSeries } from "@turnkeyai/qc-runtime/validation-soak-series";
+import {
+  isValidationProfileId,
+  listValidationProfiles,
+  runValidationProfile,
+} from "@turnkeyai/qc-runtime/validation-profile";
 import { CoordinationEngine } from "@turnkeyai/team-runtime/coordination-engine";
 import { DefaultContextStateMaintainer } from "@turnkeyai/team-runtime/context-state-maintainer";
 import { FileBackedTeamRouteMap } from "@turnkeyai/team-runtime/file-backed-team-route-map";
@@ -1125,6 +1130,23 @@ const server = http.createServer(async (req, res) => {
         }
         throw error;
       }
+    }
+
+    if (req.method === "GET" && url.pathname === "/validation-profiles") {
+      const profiles = listValidationProfiles();
+      return sendJson(res, 200, {
+        totalProfiles: profiles.length,
+        profiles,
+      });
+    }
+
+    if (req.method === "POST" && url.pathname === "/validation-profiles/run") {
+      const body = await readJsonBody<{ profileId?: string }>(req);
+      const profileId = body.profileId?.trim();
+      if (!profileId || !isValidationProfileId(profileId)) {
+        return sendJson(res, 400, { error: "Unknown validation profile" });
+      }
+      return sendJson(res, 200, await runValidationProfile(profileId));
     }
 
     if (req.method === "POST" && url.pathname === "/soak-series/run") {
