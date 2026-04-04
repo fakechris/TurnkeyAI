@@ -166,7 +166,7 @@ export function listValidationProfiles(): ValidationProfileDescriptor[] {
 }
 
 export function isValidationProfileId(value: string): value is ValidationProfileId {
-  return value in PROFILE_DESCRIPTORS;
+  return Object.prototype.hasOwnProperty.call(PROFILE_DESCRIPTORS, value);
 }
 
 export async function runValidationProfile(
@@ -414,14 +414,15 @@ function buildSuiteScopedSelectors(
     if (!suiteId) {
       continue;
     }
-    const entries = groups.get(suiteId) ?? [];
+    const entries = groups.get(suiteId);
+    if (!entries) {
+      groups.set(suiteId, [selector]);
+      continue;
+    }
     entries.push(selector);
-    groups.set(suiteId, entries);
   }
 
-  return VALIDATION_SUITE_ORDER
-    .filter((suiteId) => groups.has(suiteId))
-    .map((suiteId) => ({
+  return [...groups.keys()].map((suiteId) => ({
       suiteId,
       selectors: groups.get(suiteId)!,
     }));

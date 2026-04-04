@@ -29,6 +29,8 @@ test("validation profile id guard accepts known profiles", () => {
   assert.equal(isValidationProfileId("smoke"), true);
   assert.equal(isValidationProfileId("weekly"), true);
   assert.equal(isValidationProfileId("unknown"), false);
+  assert.equal(isValidationProfileId("constructor"), false);
+  assert.equal(isValidationProfileId("__proto__"), false);
 });
 
 test("smoke validation profile only runs validation catalog stage", async () => {
@@ -64,6 +66,7 @@ test("smoke validation profile only runs validation catalog stage", async () => 
 
 test("nightly validation profile aggregates validation, release, and soak failures", async () => {
   let validationStageCalls = 0;
+  const validationCalls: string[][] = [];
   const result = await runValidationProfile(
     "nightly",
     {},
@@ -79,6 +82,7 @@ test("nightly validation profile aggregates validation, release, and soak failur
           ],
         }),
       validationRunner: (selectors) => {
+        validationCalls.push([...(selectors ?? [])]);
         const suiteId = getSuiteIdFromSelectors(selectors);
         if (validationStageCalls < 4 && suiteId === "acceptance") {
           validationStageCalls += 1;
@@ -96,6 +100,17 @@ test("nightly validation profile aggregates validation, release, and soak failur
   assert.equal(result.status, "failed");
   assert.equal(result.totalStages, 3);
   assert.equal(result.issues.length, 3);
+  assert.deepEqual(validationCalls.slice(0, 4), [
+    ["failure"],
+    ["acceptance"],
+    ["realworld"],
+    ["soak"],
+  ]);
+  assert.deepEqual(validationCalls.slice(4, 7), [
+    ["soak"],
+    ["realworld"],
+    ["acceptance"],
+  ]);
   assert.ok(result.issues.some((issue) => issue.kind === "validation-item" && issue.scope === "acceptance:browser-ownership-reclaim-isolation"));
   assert.ok(result.issues.some((issue) => issue.kind === "release-check" && issue.scope === "publish-dry-run"));
   assert.ok(result.issues.some((issue) => issue.kind === "soak-suite" && issue.scope === "soak"));
