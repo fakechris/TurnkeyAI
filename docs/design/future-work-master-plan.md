@@ -20,6 +20,13 @@
 3. operator-facing 诊断与 failure taxonomy 的最后收口
 4. 为 Phase 2 做边界清晰的准备，而不是提前开大规模新内核
 
+补充判断：
+
+- Phase 1 的代码侧收口已经基本完成
+- 真正还没实跑完的是 public release 的外部闭环，需要 `NPM_TOKEN` 和一次真实 release
+- 在不打断当前主线的前提下，下一条新增 workstream 可以进入 `Phase 1.5 / Browser Transport v1`
+- `Browser Transport v1` 的目标不是重写 browser runtime，而是把 `relay / direct-cdp / local` 的 transport adapter 边界正式落代码
+
 ## 2. 工作原则
 
 后续推进只遵守下面几条：
@@ -151,6 +158,28 @@
 
 - 能清楚说出 Phase 2 为什么做、做什么、不做什么
 - 不把 Phase 2 的抽象提前污染 Phase 1 的收尾工作
+
+### G. Phase 1.5 Browser Transport V1
+
+目标：
+
+- 在现有 browser runtime 之上落下正式的 transport adapter 分层
+- 保持 local automation 不回归
+- 为 relay browser bridge 和后续 direct-cdp 接入建立稳定边界
+
+范围：
+
+1. `transport-adapter` 抽象
+2. `local-automation-adapter` 收编现有 local chrome 实现
+3. `relay-adapter` 最小骨架
+4. daemon/browser worker 通过 factory 选择 transport
+5. 之后再逐步补 relay peer lifecycle、target attach、action protocol
+
+完成标准：
+
+- 当前 local 路径继续稳定运行
+- relay transport 可以作为明确配置被选中
+- relay 尚未完整实现时，会以可诊断方式失败，而不是隐式退回 local
 
 ## 4. 推荐执行顺序
 

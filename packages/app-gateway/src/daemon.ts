@@ -34,7 +34,10 @@ import {
 } from "@turnkeyai/core-types/team";
 import { KeyedAsyncMutex } from "@turnkeyai/core-types/async-mutex";
 import { decodeBrowserSessionPayload } from "@turnkeyai/core-types/browser-session-payload";
-import { LocalChromeBrowserBridge } from "@turnkeyai/browser-bridge/local-chrome-browser-bridge";
+import {
+  createBrowserBridge,
+  resolveBrowserTransportMode,
+} from "@turnkeyai/browser-bridge/browser-bridge-factory";
 import { AnthropicCompatibleClient } from "@turnkeyai/llm-adapter/anthropic-compatible-client";
 import { FileModelCatalogSource } from "@turnkeyai/llm-adapter/file-model-catalog";
 import { LLMGateway } from "@turnkeyai/llm-adapter/gateway";
@@ -334,9 +337,20 @@ const contextStateMaintainer = new DefaultContextStateMaintainer({
   runtimeProgressRecorder,
   sessionMemoryRefreshDelayMs: 10,
 });
-const browserBridge = new LocalChromeBrowserBridge({
+const browserBridge = createBrowserBridge({
   artifactRootDir: path.join(DATA_DIR, "browser-artifacts"),
   stateRootDir: path.join(DATA_DIR, "browser-state"),
+  ...(process.env.TURNKEYAI_BROWSER_TRANSPORT?.trim()
+    ? { transportMode: resolveBrowserTransportMode(process.env.TURNKEYAI_BROWSER_TRANSPORT.trim()) }
+    : {}),
+  relay: {
+    ...(process.env.TURNKEYAI_BROWSER_RELAY_ENDPOINT?.trim()
+      ? { endpoint: process.env.TURNKEYAI_BROWSER_RELAY_ENDPOINT.trim() }
+      : {}),
+    ...(process.env.TURNKEYAI_BROWSER_RELAY_PEER_ID?.trim()
+      ? { relayPeerId: process.env.TURNKEYAI_BROWSER_RELAY_PEER_ID.trim() }
+      : {}),
+  },
 });
 const replayRecorder = new FileReplayRecorder({
   rootDir: path.join(DATA_DIR, "replays"),
