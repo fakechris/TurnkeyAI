@@ -154,6 +154,10 @@ export class RelayGateway {
     return new Promise<RelayActionResult>((resolve, reject) => {
       const timeout = setTimeout(() => {
         this.pendingResults.delete(request.actionRequestId);
+        const pendingRequestIndex = state.pendingActionRequests.indexOf(request);
+        if (pendingRequestIndex >= 0) {
+          state.pendingActionRequests.splice(pendingRequestIndex, 1);
+        }
         reject(new Error(`relay action request timed out: ${request.actionRequestId}`));
       }, this.actionTimeoutMs);
       this.pendingResults.set(request.actionRequestId, {

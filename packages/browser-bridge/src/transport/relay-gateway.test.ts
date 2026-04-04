@@ -103,3 +103,25 @@ test("relay gateway dispatches queued action requests and resolves submitted res
   assert.equal(result.page?.finalUrl, "https://example.com");
   assert.equal(gateway.listTargets({ peerId: "peer-1" })[0]?.relayTargetId, "tab-1");
 });
+
+test("relay gateway drops timed out action requests from the pending queue", async () => {
+  const gateway = new RelayGateway({
+    now: () => Date.now(),
+    createId: (prefix) => `${prefix}-timeout`,
+    actionTimeoutMs: 10,
+  });
+  gateway.registerPeer({
+    peerId: "peer-1",
+    capabilities: ["snapshot"],
+  });
+
+  const dispatchPromise = gateway.dispatchActionRequest({
+    peerId: "peer-1",
+    browserSessionId: "browser-session-1",
+    taskId: "task-1",
+    actions: [{ kind: "snapshot", note: "timeout" }],
+  });
+
+  await assert.rejects(dispatchPromise, /relay action request timed out/);
+  assert.equal(gateway.pullNextActionRequest("peer-1"), null);
+});
