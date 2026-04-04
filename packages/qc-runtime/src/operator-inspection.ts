@@ -293,6 +293,9 @@ export function buildOperatorSummaryReport(input: {
     ...(input.runtimeSummary?.workerSessionHealth
       ? { workerSessionHealth: input.runtimeSummary.workerSessionHealth }
       : {}),
+    ...(input.runtimeSummary?.workerBindingReconcile
+      ? { workerBindingReconcile: input.runtimeSummary.workerBindingReconcile }
+      : {}),
     promptAttentionCount,
     totalAttentionCount:
       flow.attentionCount + replay.attentionCount + governance.attentionCount + recovery.attentionCount + promptAttentionCount,
@@ -583,6 +586,19 @@ export function buildOperatorTriageReport(input: {
       nextStep: "inspect_runtime_worker_sessions",
       commandHint: "runtime-summary 10",
       state: "worker_session_drift",
+    });
+  }
+  if ((input.summary.workerBindingReconcile?.roleRunsNeedingAttention ?? 0) > 0) {
+    focusAreas.push({
+      area: "runtime",
+      label: "worker-binding-reconcile",
+      severity: "warning",
+      headline: `worker binding reconcile attention=${input.summary.workerBindingReconcile?.roleRunsNeedingAttention ?? 0}`,
+      reason:
+        `Startup reconcile cleared missing=${input.summary.workerBindingReconcile?.clearedMissingBindings ?? 0}, terminal=${input.summary.workerBindingReconcile?.clearedTerminalBindings ?? 0}, cross-thread=${input.summary.workerBindingReconcile?.clearedCrossThreadBindings ?? 0} worker bindings.`,
+      nextStep: "inspect_runtime_worker_bindings",
+      commandHint: "runtime-summary 10",
+      state: "worker_binding_reconcile",
     });
   }
 

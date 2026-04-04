@@ -283,6 +283,14 @@ export interface RuntimeSummaryReport {
     orphanedSessions: number;
     missingContextSessions: number;
   };
+  workerBindingReconcile?: {
+    totalRoleRuns: number;
+    totalBindings: number;
+    clearedMissingBindings: number;
+    clearedTerminalBindings: number;
+    clearedCrossThreadBindings: number;
+    roleRunsNeedingAttention: number;
+  };
 }
 
 export interface RuntimeProgressEvent {

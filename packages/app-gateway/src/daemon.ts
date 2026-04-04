@@ -183,6 +183,7 @@ import {
 import { createRecoveryActionService } from "./recovery-action-service";
 import { buildRecoveryRunActionConflict } from "./recovery-run-guards";
 import { createRuntimeQueryService } from "./runtime-query-service";
+import { reconcileWorkerBindingsOnStartup } from "./worker-binding-startup-reconcile";
 import { handleBrowserRoutes, type BrowserTaskRouteBody } from "./routes/browser-routes";
 import { handleInspectionRoutes } from "./routes/inspection-routes";
 import { handleRecoveryRoutes } from "./routes/recovery-routes";
@@ -434,6 +435,14 @@ const workerStartupReconcileResult = await workerRuntime.reconcileStartup?.();
 if (workerStartupReconcileResult && workerStartupReconcileResult.totalSessions > 0) {
   console.info("worker runtime startup reconcile completed", workerStartupReconcileResult);
 }
+const workerBindingReconcileResult = await reconcileWorkerBindingsOnStartup({
+  teamThreadStore,
+  roleRunStore,
+  workerRuntime,
+});
+if (workerBindingReconcileResult && workerBindingReconcileResult.totalBindings > 0) {
+  console.info("worker binding startup reconcile completed", workerBindingReconcileResult);
+}
 const heuristicResponseGenerator = new DeterministicRoleResponseGenerator({
   modelAdapter: new HeuristicModelAdapter(),
   roleProfileRegistry,
@@ -560,6 +569,7 @@ const runtimeQueryService = createRuntimeQueryService({
   clock,
   workerRuntime,
   getWorkerStartupReconcileResult: () => workerStartupReconcileResult,
+  getWorkerBindingReconcileResult: () => workerBindingReconcileResult,
   teamThreadStore,
   flowLedgerStore,
   roleRunStore,

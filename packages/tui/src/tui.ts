@@ -986,6 +986,11 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
       `  worker sessions: total=${report.workerSessionHealth.totalSessions} active=${report.workerSessionHealth.activeSessions} orphaned=${report.workerSessionHealth.orphanedSessions} missing-context=${report.workerSessionHealth.missingContextSessions}`
     );
   }
+  if (report.workerBindingReconcile) {
+    console.log(
+      `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention}`
+    );
+  }
   printRuntimeSummaryEntries("  attention chains:", report.attentionChains);
   printRuntimeSummaryEntries("  active chains:", report.activeChains);
   printRuntimeSummaryEntries("  waiting chains:", report.waitingChains);
@@ -1391,6 +1396,11 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   if (report.workerSessionHealth) {
     console.log(
       `  worker sessions: total=${report.workerSessionHealth.totalSessions} active=${report.workerSessionHealth.activeSessions} orphaned=${report.workerSessionHealth.orphanedSessions} missing-context=${report.workerSessionHealth.missingContextSessions}`
+    );
+  }
+  if (report.workerBindingReconcile) {
+    console.log(
+      `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention}`
     );
   }
   console.log(

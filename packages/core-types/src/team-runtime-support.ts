@@ -569,6 +569,15 @@ export interface WorkerStartupReconcileResult {
   downgradedRunningSessions: number;
 }
 
+export interface WorkerBindingStartupReconcileResult {
+  totalRoleRuns: number;
+  totalBindings: number;
+  clearedMissingBindings: number;
+  clearedTerminalBindings: number;
+  clearedCrossThreadBindings: number;
+  roleRunsNeedingAttention: number;
+}
+
 export interface SupervisorUserMessageInput {
   thread: TeamThread;
   flow: FlowLedger;

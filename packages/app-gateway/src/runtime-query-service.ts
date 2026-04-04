@@ -66,6 +66,16 @@ export function createRuntimeQueryService(input: {
   clock: Clock;
   workerRuntime: WorkerRuntime;
   getWorkerStartupReconcileResult?: () => { totalSessions: number; downgradedRunningSessions: number } | undefined;
+  getWorkerBindingReconcileResult?: () =>
+    | {
+        totalRoleRuns: number;
+        totalBindings: number;
+        clearedMissingBindings: number;
+        clearedTerminalBindings: number;
+        clearedCrossThreadBindings: number;
+        roleRunsNeedingAttention: number;
+      }
+    | undefined;
   teamThreadStore: FileTeamThreadStore;
   flowLedgerStore: FileFlowLedgerStore;
   roleRunStore: FileRoleRunStore;
@@ -82,6 +92,7 @@ export function createRuntimeQueryService(input: {
     clock,
     workerRuntime,
     getWorkerStartupReconcileResult,
+    getWorkerBindingReconcileResult,
     teamThreadStore,
     flowLedgerStore,
     roleRunStore,
@@ -289,18 +300,26 @@ export function createRuntimeQueryService(input: {
         now: clock.now(),
       });
       const workerStartupReconcile = getWorkerStartupReconcileResult?.();
+      const workerBindingReconcile = getWorkerBindingReconcileResult?.();
       return workerStartupReconcile
         ? {
             ...report,
             workerStartupReconcile,
             ...(workerSessionHealth ? { workerSessionHealth } : {}),
+            ...(workerBindingReconcile ? { workerBindingReconcile } : {}),
           }
         : workerSessionHealth
           ? {
               ...report,
               workerSessionHealth,
+              ...(workerBindingReconcile ? { workerBindingReconcile } : {}),
             }
-          : report;
+          : workerBindingReconcile
+            ? {
+                ...report,
+                workerBindingReconcile,
+              }
+            : report;
     },
 
     async listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]> {
