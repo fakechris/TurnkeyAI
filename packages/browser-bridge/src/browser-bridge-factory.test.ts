@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createBrowserBridge, resolveBrowserTransportMode } from "./browser-bridge-factory";
+import { maybeGetRelayGateway } from "./transport/relay-adapter";
 
 test("browser bridge factory defaults to local automation transport", () => {
   const bridge = createBrowserBridge({
@@ -23,6 +24,7 @@ test("browser bridge factory can build relay transport skeleton", () => {
 
   assert.equal(bridge.transportMode, "relay");
   assert.equal(bridge.transportLabel, "chrome-relay");
+  assert.ok(maybeGetRelayGateway(bridge));
 });
 
 test("browser bridge factory rejects unknown transport mode", () => {
@@ -32,7 +34,7 @@ test("browser bridge factory rejects unknown transport mode", () => {
   );
 });
 
-test("relay transport skeleton surfaces a deterministic unsupported error", async () => {
+test("relay transport surfaces a deterministic no-peer error before any peer registers", async () => {
   const bridge = createBrowserBridge({
     artifactRootDir: "/tmp/turnkeyai-browser-factory-relay-error",
     transportMode: "relay",
@@ -44,6 +46,6 @@ test("relay transport skeleton surfaces a deterministic unsupported error", asyn
   await assert.rejects(
     () =>
       bridge.inspectPublicPage("https://example.com"),
-    /relay browser transport is not implemented yet: inspectPublicPage/
+    /relay browser transport has no registered peers/
   );
 });

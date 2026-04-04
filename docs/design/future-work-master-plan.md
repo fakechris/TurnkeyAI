@@ -235,7 +235,7 @@
 可直接交给下一个 agent 的 handoff：
 
 ```text
-当前主仓库是 /Users/chris/workspace/turnkeyai，只在这个仓库继续工作，不要改 archive 仓库，也不要重新引入 accio / claude code 字样。
+当前主仓库是 /Users/chris/workspace/turnkeyai，只在这个仓库继续工作，不要改 archive 仓库，也不要重新引入旧 identity 或旧命名字样。
 
 截至 2026-04-04，Phase 1 的核心机制已经完成，主线不再是新增 kernel，而是收口四类工作：
 1. public release / npm publish 闭环验证
@@ -256,6 +256,8 @@
 
 工作时优先看这些文档：
 - docs/design/future-work-master-plan.md
+- docs/design/browser-relay-bridge-v1.md
+- docs/design/browser-transport-v1-execution-plan.md
 - docs/MILESTONES.md
 - docs/design/phase1-productization-matrix.md
 - docs/design/production-hardening-gap-map.md

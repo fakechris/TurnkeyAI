@@ -6,6 +6,7 @@ import type {
   BrowserContinuationHint,
   BrowserSessionOwnerType,
   BrowserTaskAction,
+  BrowserTaskResult,
   BrowserTaskRequest,
   WorkerRuntime,
   Clock,
@@ -38,6 +39,7 @@ import {
   createBrowserBridge,
   resolveBrowserTransportMode,
 } from "@turnkeyai/browser-bridge/browser-bridge-factory";
+import { maybeGetRelayGateway } from "@turnkeyai/browser-bridge/transport/relay-adapter";
 import { AnthropicCompatibleClient } from "@turnkeyai/llm-adapter/anthropic-compatible-client";
 import { FileModelCatalogSource } from "@turnkeyai/llm-adapter/file-model-catalog";
 import { LLMGateway } from "@turnkeyai/llm-adapter/gateway";
@@ -352,6 +354,7 @@ const browserBridge = createBrowserBridge({
       : {}),
   },
 });
+const relayGateway = maybeGetRelayGateway(browserBridge);
 const replayRecorder = new FileReplayRecorder({
   rootDir: path.join(DATA_DIR, "replays"),
 });
@@ -1624,6 +1627,153 @@ const server = http.createServer(async (req, res) => {
         await browserBridge.evictIdleSessions({
           idleBefore,
           ...(body.reason ? { reason: body.reason } : {}),
+        })
+      );
+    }
+
+    if (req.method === "GET" && url.pathname === "/relay/peers") {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      return sendJson(res, 200, relayGateway.listPeers());
+    }
+
+    if (req.method === "POST" && url.pathname === "/relay/peers/register") {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const body = await readJsonBody<{
+        peerId?: string;
+        label?: string;
+        capabilities?: string[];
+        transportLabel?: string;
+      }>(req);
+      if (!body.peerId?.trim()) {
+        return sendJson(res, 400, { error: "peerId is required" });
+      }
+      return sendJson(
+        res,
+        201,
+        relayGateway.registerPeer({
+          peerId: body.peerId,
+          ...(body.label?.trim() ? { label: body.label.trim() } : {}),
+          ...(Array.isArray(body.capabilities) ? { capabilities: body.capabilities } : {}),
+          ...(body.transportLabel?.trim() ? { transportLabel: body.transportLabel.trim() } : {}),
+        })
+      );
+    }
+
+    const relayPeerHeartbeatMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/heartbeat$/);
+    if (req.method === "POST" && relayPeerHeartbeatMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      return sendJson(res, 200, relayGateway.heartbeatPeer(decodeURIComponent(relayPeerHeartbeatMatch[1]!)));
+    }
+
+    const relayPeerTargetsMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/targets\/report$/);
+    if (req.method === "POST" && relayPeerTargetsMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const body = await readJsonBody<{
+        targets?: Array<{
+          relayTargetId?: string;
+          url?: string;
+          title?: string;
+          status?: "open" | "attached" | "detached" | "closed";
+        }>;
+      }>(req);
+      if (!Array.isArray(body.targets)) {
+        return sendJson(res, 400, { error: "targets array is required" });
+      }
+      return sendJson(
+        res,
+        200,
+        relayGateway.reportTargets(
+          decodeURIComponent(relayPeerTargetsMatch[1]!),
+          body.targets.map((target) => ({
+            relayTargetId: target.relayTargetId?.trim() ?? "",
+            url: target.url ?? "",
+            ...(target.title ? { title: target.title } : {}),
+            ...(target.status ? { status: target.status } : {}),
+          }))
+        )
+      );
+    }
+
+    if (req.method === "GET" && url.pathname === "/relay/targets") {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const peerId = url.searchParams.get("peerId");
+      return sendJson(
+        res,
+        200,
+        relayGateway.listTargets(peerId?.trim() ? { peerId: peerId.trim() } : undefined)
+      );
+    }
+
+    const relayPeerPullActionsMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/pull-actions$/);
+    if (req.method === "POST" && relayPeerPullActionsMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      return sendJson(
+        res,
+        200,
+        relayGateway.pullNextActionRequest(decodeURIComponent(relayPeerPullActionsMatch[1]!))
+      );
+    }
+
+    const relayPeerActionResultsMatch = url.pathname.match(/^\/relay\/peers\/([^/]+)\/action-results$/);
+    if (req.method === "POST" && relayPeerActionResultsMatch) {
+      if (!relayGateway) {
+        return sendJson(res, 503, { error: "relay browser transport is not active" });
+      }
+      const peerId = decodeURIComponent(relayPeerActionResultsMatch[1]!);
+      const body = await readJsonBody<{
+        actionRequestId?: string;
+        browserSessionId?: string;
+        taskId?: string;
+        relayTargetId?: string;
+        url?: string;
+        title?: string;
+        status?: "completed" | "failed";
+        page?: BrowserTaskResult["page"];
+        trace?: BrowserTaskResult["trace"];
+        screenshotPaths?: string[];
+        artifactIds?: string[];
+        errorMessage?: string;
+      }>(req);
+      if (!body.actionRequestId?.trim() || !body.browserSessionId?.trim() || !body.taskId?.trim() || !body.relayTargetId?.trim()) {
+        return sendJson(res, 400, {
+          error: "actionRequestId, browserSessionId, taskId, and relayTargetId are required",
+        });
+      }
+      if (!body.url?.trim()) {
+        return sendJson(res, 400, { error: "url is required" });
+      }
+      if (!body.status) {
+        return sendJson(res, 400, { error: "status is required" });
+      }
+      return sendJson(
+        res,
+        200,
+        relayGateway.submitActionResult({
+          actionRequestId: body.actionRequestId.trim(),
+          peerId,
+          browserSessionId: body.browserSessionId.trim(),
+          taskId: body.taskId.trim(),
+          relayTargetId: body.relayTargetId.trim(),
+          url: body.url.trim(),
+          ...(body.title ? { title: body.title } : {}),
+          status: body.status,
+          ...(body.page ? { page: body.page } : {}),
+          trace: Array.isArray(body.trace) ? body.trace : [],
+          screenshotPaths: Array.isArray(body.screenshotPaths) ? body.screenshotPaths : [],
+          artifactIds: Array.isArray(body.artifactIds) ? body.artifactIds : [],
+          ...(body.errorMessage ? { errorMessage: body.errorMessage } : {}),
         })
       );
     }
