@@ -161,6 +161,7 @@ npm run relay:wait -- --require-target
 如果要一条命令跑完整本地 smoke：
 
 ```bash
+npm run relay:smoke
 npm run relay:smoke -- --url https://example.com
 ```
 

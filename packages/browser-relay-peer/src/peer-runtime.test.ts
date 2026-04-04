@@ -149,6 +149,63 @@ test("browser relay peer runtime stays idle when no action is queued", async () 
   assert.equal(pullCount, 1);
 });
 
+test("browser relay peer runtime submits a failed result when execution throws for a known relay target", async () => {
+  const submitted: RelayActionResult[] = [];
+  const runtime = new BrowserRelayPeerRuntime({
+    peer: {
+      peerId: "peer-1",
+      capabilities: ["snapshot"],
+    },
+    client: {
+      async registerPeer() {
+        return peerRecord();
+      },
+      async heartbeatPeer() {
+        return peerRecord();
+      },
+      async reportTargets(peerId, targets) {
+        return targets.map((target) => toTargetRecord(peerId, target));
+      },
+      async pullNextAction() {
+        return {
+          actionRequestId: "relay-action-1",
+          peerId: "peer-1",
+          browserSessionId: "browser-session-1",
+          taskId: "task-1",
+          relayTargetId: "chrome-tab:7",
+          actions: [{ kind: "snapshot", note: "inspect" }],
+          createdAt: 1,
+          expiresAt: 2,
+        };
+      },
+      async submitActionResult(peerId, result) {
+        const payload: RelayActionResult = {
+          peerId,
+          ...result,
+        };
+        submitted.push(payload);
+        return payload;
+      },
+    },
+    targetObserver: {
+      async listTargets() {
+        return [];
+      },
+    },
+    actionExecutor: {
+      async execute() {
+        throw new Error("content script unavailable");
+      },
+    },
+  });
+
+  const result = await runtime.runCycle();
+  assert.equal(result?.status, "failed");
+  assert.match(result?.errorMessage ?? "", /content script unavailable/);
+  assert.equal(result?.relayTargetId, "chrome-tab:7");
+  assert.equal(submitted.length, 1);
+});
+
 function peerRecord(): RelayPeerRecord {
   return {
     peerId: "peer-1",

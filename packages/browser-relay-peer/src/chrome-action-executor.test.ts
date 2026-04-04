@@ -123,6 +123,46 @@ test("chrome relay action executor surfaces content-script failures", async () =
   assert.match(result.errorMessage ?? "", /content script unavailable/);
 });
 
+test("chrome relay action executor retries transient content-script startup errors", async () => {
+  let attempts = 0;
+  const executor = new ChromeRelayActionExecutor(
+    fakePlatform({
+      activeTab: { id: 7, windowId: 3, url: "https://example.com", title: "Example", status: "complete" },
+      onSendMessage() {
+        attempts += 1;
+        if (attempts < 3) {
+          throw new Error("Could not establish connection. Receiving end does not exist.");
+        }
+        return {
+          ok: true,
+          page: {
+            requestedUrl: "https://example.com",
+            finalUrl: "https://example.com",
+            title: "Example",
+            textExcerpt: "Example page",
+            statusCode: 200,
+            interactives: [],
+          },
+          trace: [],
+        };
+      },
+    })
+  );
+
+  const result = await executor.execute({
+    actionRequestId: "relay-action-retry",
+    peerId: "peer-1",
+    browserSessionId: "browser-session-1",
+    taskId: "task-1",
+    actions: [{ kind: "snapshot", note: "inspect" }],
+    createdAt: 1,
+    expiresAt: 2,
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(attempts, 3);
+});
+
 function fakePlatform(input: {
   activeTab: { id: number; windowId?: number; url: string; title: string; status: "complete" | "loading" };
   onSendMessage(tabId: number, message: unknown): unknown;

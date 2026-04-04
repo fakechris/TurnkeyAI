@@ -89,6 +89,7 @@ npm run relay:wait -- --require-target
 可以直接执行：
 
 ```bash
+npm run relay:smoke
 npm run relay:smoke -- --url https://example.com
 ```
 

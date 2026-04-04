@@ -6,6 +6,8 @@ import type { RelayContentScriptExecuteResponse } from "./chrome-content-script-
 import { ChromeRelayTabObserver, formatRelayTargetId } from "./chrome-tab-observer";
 
 export class ChromeRelayActionExecutor {
+  private readonly contentScriptRetryAttempts = 20;
+  private readonly contentScriptRetryDelayMs = 150;
   private readonly tabObserver: ChromeRelayTabObserver;
 
   constructor(private readonly platform: ChromeExtensionPlatform) {
@@ -142,10 +144,55 @@ export class ChromeRelayActionExecutor {
     actionRequestId: string,
     actions: RelayActionRequest["actions"]
   ): Promise<RelayContentScriptExecuteResponse> {
-    return this.platform.sendTabMessage<RelayContentScriptExecuteResponse>(tabId, {
-      type: "turnkeyai.relay.execute",
-      actionRequestId,
-      actions,
-    });
+    return retryAsync(
+      () =>
+        this.platform.sendTabMessage<RelayContentScriptExecuteResponse>(tabId, {
+          type: "turnkeyai.relay.execute",
+          actionRequestId,
+          actions,
+        }),
+      {
+        attempts: this.contentScriptRetryAttempts,
+        delayMs: this.contentScriptRetryDelayMs,
+        shouldRetry: (error) => isRetryableRelayContentScriptError(error),
+      }
+    );
   }
+}
+
+async function retryAsync<T>(
+  task: () => Promise<T>,
+  input: {
+    attempts: number;
+    delayMs: number;
+    shouldRetry(error: unknown): boolean;
+  }
+): Promise<T> {
+  let lastError: unknown;
+  for (let index = 0; index < input.attempts; index += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      if (index === input.attempts - 1 || !input.shouldRetry(error)) {
+        throw error;
+      }
+      await sleep(input.delayMs);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("relay content script retry exhausted");
+}
+
+function isRetryableRelayContentScriptError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /receiving end does not exist/i.test(message) ||
+    /message port closed/i.test(message) ||
+    /frame with id .* was removed/i.test(message) ||
+    /cannot access contents of url/i.test(message)
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

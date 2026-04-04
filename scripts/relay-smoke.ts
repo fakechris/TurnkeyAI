@@ -3,10 +3,11 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
+import { createServer, type Server } from "node:http";
 
 const args = process.argv.slice(2);
 let daemonUrl = process.env.TURNKEYAI_DAEMON_URL ?? "";
-let startUrl = "https://example.com";
+let startUrl = "";
 let chromePath: string | null = null;
 let profileDir: string | null = null;
 let timeoutMs = 20_000;
@@ -107,6 +108,8 @@ async function main(): Promise<void> {
     ? daemonUrl.trim().replace(/\/+$/, "")
     : `http://127.0.0.1:${daemonPort ?? (await resolveFreePort())}`;
   const resolvedDaemonPort = Number(new URL(resolvedDaemonUrl).port || 80);
+  const fixture = startUrl.trim() ? null : await startRelaySmokeFixture();
+  const effectiveStartUrl = startUrl.trim() || fixture!.url;
 
   let daemonChild: ChildProcess | null = null;
   let chromeChild: ChildProcess | null = null;
@@ -141,7 +144,7 @@ async function main(): Promise<void> {
         `--load-extension=${extensionDir}`,
         "--no-first-run",
         "--no-default-browser-check",
-        startUrl,
+        effectiveStartUrl,
       ],
       {
         stdio: "ignore",
@@ -158,7 +161,8 @@ async function main(): Promise<void> {
       requireBrowserAction
         ? await runBrowserSessionSmoke({
             daemonUrl: resolvedDaemonUrl,
-            startUrl,
+            startUrl: effectiveStartUrl,
+            richActions: !startUrl.trim(),
           })
         : null;
 
@@ -171,9 +175,14 @@ async function main(): Promise<void> {
     if (browserSmoke) {
       console.log(`browser-session: ${browserSmoke.sessionId}`);
       console.log(`browser-final-url: ${browserSmoke.finalUrl}`);
+      console.log(`browser-history: ${browserSmoke.historyLength}`);
+      console.log(`browser-transport: ${browserSmoke.transportLabel}`);
+      if (browserSmoke.resumeFinalUrl) {
+        console.log(`browser-resume-final-url: ${browserSmoke.resumeFinalUrl}`);
+      }
     }
     console.log(`profile: ${resolvedProfileDir}`);
-    console.log(`url: ${startUrl}`);
+    console.log(`url: ${effectiveStartUrl}`);
 
     if (keepOpen) {
       console.log("processes left running due to --keep-open");
@@ -187,6 +196,7 @@ async function main(): Promise<void> {
     if (daemonChild) {
       daemonChild.kill("SIGTERM");
     }
+    await fixture?.close();
     if (!keepOpen) {
       await rm(resolvedProfileDir, { recursive: true, force: true }).catch(() => undefined);
     }
@@ -313,7 +323,14 @@ async function waitForRelayPeer(input: {
 async function runBrowserSessionSmoke(input: {
   daemonUrl: string;
   startUrl: string;
-}): Promise<{ sessionId: string; finalUrl: string }> {
+  richActions: boolean;
+}): Promise<{
+  sessionId: string;
+  finalUrl: string;
+  resumeFinalUrl?: string;
+  historyLength: number;
+  transportLabel: string;
+}> {
   const thread = (await postJson(`${input.daemonUrl}/threads/bootstrap-demo`, {
     variant: "default",
   })) as {
@@ -337,17 +354,220 @@ async function runBrowserSessionSmoke(input: {
 
   const sessionId = typeof response.sessionId === "string" ? response.sessionId : "";
   const finalUrl = typeof response.page?.finalUrl === "string" ? response.page.finalUrl : "";
+  const transportLabel = typeof (response as { transportLabel?: unknown }).transportLabel === "string"
+    ? ((response as { transportLabel: string }).transportLabel)
+    : "";
   if (!sessionId) {
     throw new Error("browser session smoke did not return a sessionId");
   }
   if (!finalUrl) {
     throw new Error("browser session smoke did not return a final page URL");
   }
-  if (finalUrl === input.startUrl || finalUrl.startsWith(input.startUrl)) {
-    return { sessionId, finalUrl };
+  if (!transportLabel) {
+    throw new Error("browser session smoke did not return a transport label");
+  }
+  if (finalUrl !== input.startUrl && !finalUrl.startsWith(input.startUrl)) {
+    throw new Error(`browser session smoke returned unexpected final URL: ${finalUrl}`);
   }
 
-  throw new Error(`browser session smoke returned unexpected final URL: ${finalUrl}`);
+  if (!input.richActions) {
+    const history = await getSessionHistory(input.daemonUrl, threadId, sessionId);
+    return {
+      sessionId,
+      finalUrl,
+      historyLength: history.length,
+      transportLabel,
+    };
+  }
+
+  const sendResponse = (await postJson(`${input.daemonUrl}/browser-sessions/${encodeURIComponent(sessionId)}/send`, {
+    threadId,
+    instructions: "Type into the relay form, submit it, and inspect page metadata.",
+    actions: [
+      { kind: "type", selectors: ["#relay-input"], text: "turnkey relay" },
+      { kind: "click", selectors: ["#relay-submit"] },
+      { kind: "console", probe: "page-metadata" },
+      { kind: "snapshot", note: "after-submit" },
+    ],
+  })) as BrowserSmokeResponse;
+  const sendFinalUrl = requireString(sendResponse.page?.finalUrl, "relay send final page URL");
+  const sendTitle = requireString(sendResponse.page?.title, "relay send page title");
+  const sendTransportLabel = requireString(sendResponse.transportLabel, "relay send transport label");
+  if (!sendFinalUrl.includes("#submitted")) {
+    throw new Error(`relay send smoke did not submit fixture form: ${sendFinalUrl}`);
+  }
+  if (sendTitle !== "submitted:turnkey relay") {
+    throw new Error(`relay send smoke returned unexpected title: ${sendTitle}`);
+  }
+  if (sendTransportLabel !== "chrome-relay") {
+    throw new Error(`relay send smoke returned unexpected transport label: ${sendTransportLabel}`);
+  }
+  const metadataTrace = sendResponse.trace?.find((entry) => entry.kind === "console");
+  const metadataResult = metadataTrace?.output && typeof metadataTrace.output === "object"
+    ? (metadataTrace.output as { result?: { title?: unknown; href?: unknown; interactiveCount?: unknown } }).result
+    : null;
+  if (!metadataResult || metadataResult.title !== "submitted:turnkey relay") {
+    throw new Error("relay send smoke console probe did not observe the submitted title");
+  }
+  if (typeof metadataResult.href !== "string" || !metadataResult.href.includes("#submitted")) {
+    throw new Error("relay send smoke console probe did not observe the submitted hash URL");
+  }
+
+  const resumeResponse = (await postJson(`${input.daemonUrl}/browser-sessions/${encodeURIComponent(sessionId)}/resume`, {
+    threadId,
+    instructions: "Resume the relay session, scroll, inspect interactives, and capture a final snapshot.",
+    actions: [
+      { kind: "scroll", direction: "down", amount: 240 },
+      { kind: "console", probe: "interactive-summary" },
+      { kind: "snapshot", note: "post-resume" },
+    ],
+  })) as BrowserSmokeResponse;
+  const resumeFinalUrl = requireString(resumeResponse.page?.finalUrl, "relay resume final page URL");
+  if (!resumeFinalUrl.includes("#submitted")) {
+    throw new Error(`relay resume smoke lost the submitted page state: ${resumeFinalUrl}`);
+  }
+  if (resumeResponse.dispatchMode !== "resume") {
+    throw new Error(`relay resume smoke returned unexpected dispatch mode: ${String(resumeResponse.dispatchMode ?? "unknown")}`);
+  }
+  if (resumeResponse.transportLabel !== "chrome-relay") {
+    throw new Error(`relay resume smoke returned unexpected transport label: ${String(resumeResponse.transportLabel ?? "unknown")}`);
+  }
+  const interactiveTrace = resumeResponse.trace?.find((entry) => entry.kind === "console");
+  const interactiveResult =
+    interactiveTrace?.output && typeof interactiveTrace.output === "object"
+      ? (interactiveTrace.output as { result?: unknown }).result
+      : null;
+  if (!Array.isArray(interactiveResult) || interactiveResult.length < 2) {
+    throw new Error("relay resume smoke did not surface interactive summary results");
+  }
+
+  const history = await getSessionHistory(input.daemonUrl, threadId, sessionId);
+  const dispatchSequence = history.map((entry) => entry.dispatchMode).join(",");
+  if (dispatchSequence !== "spawn,send,resume") {
+    throw new Error(`relay smoke history recorded unexpected dispatch sequence: ${dispatchSequence}`);
+  }
+  if (!history.every((entry) => entry.transportLabel === "chrome-relay")) {
+    throw new Error("relay smoke history is missing chrome-relay transport labels");
+  }
+  if (!history.every((entry) => typeof entry.transportTargetId === "string" && entry.transportTargetId.startsWith("chrome-tab:"))) {
+    throw new Error("relay smoke history is missing chrome-tab transport targets");
+  }
+
+  return {
+    sessionId,
+    finalUrl: sendFinalUrl,
+    resumeFinalUrl,
+    historyLength: history.length,
+    transportLabel: sendTransportLabel,
+  };
+}
+
+async function getSessionHistory(
+  daemonUrl: string,
+  threadId: string,
+  sessionId: string
+): Promise<Array<{ dispatchMode?: unknown; transportLabel?: unknown; transportTargetId?: unknown }>> {
+  return (await getJson(
+    `${daemonUrl}/browser-sessions/${encodeURIComponent(sessionId)}/history?threadId=${encodeURIComponent(threadId)}&limit=10`
+  )) as Array<{ dispatchMode?: unknown; transportLabel?: unknown; transportTargetId?: unknown }>;
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value.length) {
+    throw new Error(`missing ${label}`);
+  }
+  return value;
+}
+
+async function startRelaySmokeFixture(): Promise<{ url: string; close(): Promise<void> }> {
+  const html = buildRelaySmokeFixtureHtml();
+  const server = createServer((req, res) => {
+    if ((req.url ?? "/") !== "/") {
+      res.statusCode = 404;
+      res.setHeader("content-type", "text/plain; charset=utf-8");
+      res.end("not found");
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.end(html);
+  });
+  const port = await new Promise<number>((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        reject(new Error("failed to bind relay smoke fixture server"));
+        return;
+      }
+      resolve(address.port);
+    });
+    server.on("error", reject);
+  });
+  return {
+    url: `http://127.0.0.1:${port}/`,
+    close: async () =>
+      new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve();
+        });
+      }),
+  };
+}
+
+function buildRelaySmokeFixtureHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>relay-smoke-initial</title>
+    <style>
+      body { font-family: sans-serif; margin: 24px; min-height: 2200px; }
+      .spacer { height: 1400px; background: linear-gradient(#fff, #f3f7ff); }
+      label, input, button { display: block; margin-bottom: 12px; }
+    </style>
+  </head>
+  <body>
+    <h1>TurnkeyAI Relay Smoke</h1>
+    <p id="status">idle</p>
+    <label for="relay-input">Relay Input</label>
+    <input id="relay-input" aria-label="Relay Input" />
+    <button id="relay-submit" type="button">Submit Relay Form</button>
+    <div class="spacer"></div>
+    <script>
+      const input = document.getElementById("relay-input");
+      const status = document.getElementById("status");
+      const button = document.getElementById("relay-submit");
+      button.addEventListener("click", () => {
+        const value = input.value || "empty";
+        document.title = "submitted:" + value;
+        status.textContent = "submitted:" + value;
+        location.hash = "submitted";
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+interface BrowserSmokeResponse {
+  sessionId?: string;
+  dispatchMode?: string;
+  resumeMode?: string;
+  transportMode?: string;
+  transportLabel?: string;
+  transportTargetId?: string;
+  page?: {
+    finalUrl?: string;
+    title?: string;
+  };
+  screenshotPaths?: string[];
+  trace?: Array<{
+    kind?: string;
+    output?: Record<string, unknown>;
+  }>;
 }
 
 async function getJson(url: string): Promise<unknown> {

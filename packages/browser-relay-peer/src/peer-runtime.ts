@@ -83,7 +83,24 @@ export class BrowserRelayPeerRuntime {
       return null;
     }
 
-    const execution = await this.actionExecutor.execute(request);
+    let execution: RelayPeerExecutionResult;
+    try {
+      execution = await this.actionExecutor.execute(request);
+    } catch (error) {
+      if (!request.relayTargetId) {
+        throw error;
+      }
+      execution = {
+        relayTargetId: request.relayTargetId,
+        url: "",
+        status: "failed",
+        trace: [],
+        screenshotPaths: [],
+        screenshotPayloads: [],
+        artifactIds: [],
+        errorMessage: error instanceof Error ? error.message : "relay execution failed",
+      };
+    }
     const relayTargetId = execution.relayTargetId ?? request.relayTargetId;
     if (!relayTargetId) {
       throw new Error(`relay execution result missing relayTargetId for request: ${request.actionRequestId}`);

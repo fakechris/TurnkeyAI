@@ -132,10 +132,9 @@ export async function executeChromeRelayContentScriptActions(
         if ("value" in element) {
           element.value = typeof action.text === "string" ? action.text : "";
         }
-        const inputEvent = { type: "input" };
-        element.dispatchEvent?.(inputEvent);
+        element.dispatchEvent?.(createDomEvent("input"));
         if (action.submit && typeof element.dispatchEvent === "function") {
-          element.dispatchEvent({ type: "submit" });
+          element.dispatchEvent(createDomEvent("submit"));
         }
         latestSnapshot = captureSnapshot(environment);
         trace.push({
@@ -370,6 +369,13 @@ function toElementArray(
   collection: DocumentLikeCollection | undefined
 ): DocumentLikeElement[] {
   return collection ? Array.from(collection) : [];
+}
+
+function createDomEvent(type: string): unknown {
+  if (typeof Event === "function") {
+    return new Event(type, { bubbles: true, cancelable: true });
+  }
+  return { type };
 }
 
 function getDefaultContentScriptEnvironment(): ChromeRelayContentScriptEnvironment {
