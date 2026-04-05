@@ -41,7 +41,7 @@ import {
   createBrowserBridge,
   resolveBrowserTransportMode,
 } from "@turnkeyai/browser-bridge/browser-bridge-factory";
-import { maybeGetRelayGateway } from "@turnkeyai/browser-bridge/transport/relay-adapter";
+import { maybeGetRelayControlPlane } from "@turnkeyai/browser-bridge/transport/transport-adapter";
 import { AnthropicCompatibleClient } from "@turnkeyai/llm-adapter/anthropic-compatible-client";
 import { FileModelCatalogSource } from "@turnkeyai/llm-adapter/file-model-catalog";
 import { LLMGateway } from "@turnkeyai/llm-adapter/gateway";
@@ -397,7 +397,7 @@ const browserBridge = createBrowserBridge({
       : {}),
   },
 });
-const relayGateway = maybeGetRelayGateway(browserBridge);
+const relayGateway = maybeGetRelayControlPlane(browserBridge);
 function getRelayDiagnosticsSnapshot() {
   return relayGateway
     ? {

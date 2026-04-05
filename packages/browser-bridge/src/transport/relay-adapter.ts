@@ -32,6 +32,7 @@ import type { RelayActionRequest, RelayActionResult } from "./relay-protocol";
 import type {
   BrowserTransportAdapter,
   BrowserTransportFactoryOptions,
+  RelayControlPlane,
   RelayTransportOptions,
 } from "./transport-adapter";
 
@@ -87,6 +88,10 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
       rootDir: path.join(stateRootDir, "artifacts"),
     });
     this.gateway = new RelayGateway();
+  }
+
+  getRelayControlPlane(): RelayControlPlane {
+    return this.gateway;
   }
 
   getRelayGateway(): RelayGateway {
