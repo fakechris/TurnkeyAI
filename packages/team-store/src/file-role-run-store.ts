@@ -32,7 +32,7 @@ export class FileRoleRunStore implements RoleRunStore {
     return all.filter((runState) => runState.threadId === threadId);
   }
 
-  private async listAll(): Promise<RoleRunState[]> {
+  async listAll(): Promise<RoleRunState[]> {
     await mkdir(this.rootDir, { recursive: true });
     const filePaths = await listJsonFiles(this.rootDir);
     const runs = await Promise.all(filePaths.map((filePath) => readJsonFile<RoleRunState>(filePath)));

@@ -85,6 +85,9 @@ export function createRuntimeQueryService(input: {
         restartedRunningRuns: number;
         restartedResumingRuns: number;
         restartedRunKeys: string[];
+        orphanedThreadRuns: number;
+        failedOrphanedRuns: number;
+        failedRunKeys: string[];
       }
     | undefined;
   teamThreadStore: FileTeamThreadStore;

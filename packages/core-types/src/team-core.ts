@@ -299,6 +299,9 @@ export interface RuntimeSummaryReport {
     restartedRunningRuns: number;
     restartedResumingRuns: number;
     restartedRunKeys: RunKey[];
+    orphanedThreadRuns: number;
+    failedOrphanedRuns: number;
+    failedRunKeys: RunKey[];
   };
 }
 
@@ -659,6 +662,7 @@ export interface RoleRunStore {
   put(runState: RoleRunState): Promise<void>;
   delete(runKey: RunKey): Promise<void>;
   listByThread(threadId: ThreadId): Promise<RoleRunState[]>;
+  listAll?(): Promise<RoleRunState[]>;
 }
 
 export interface FlowLedgerStore {

@@ -1,5 +1,6 @@
 import type {
   RoleLoopRunner,
+  RoleRunState,
   RoleRunStartupRecoveryResult,
   RoleRunStore,
   TeamThreadStore,
@@ -11,10 +12,27 @@ export async function recoverRoleRunsOnStartup(input: {
   roleLoopRunner: RoleLoopRunner;
 }): Promise<RoleRunStartupRecoveryResult> {
   const threads = await input.teamThreadStore.list();
-  const roleRuns = (await Promise.all(threads.map((thread) => input.roleRunStore.listByThread(thread.threadId)))).flat();
+  const threadIds = new Set(threads.map((thread) => thread.threadId));
+  const roleRuns =
+    (await input.roleRunStore.listAll?.()) ??
+    (await Promise.all(threads.map((thread) => input.roleRunStore.listByThread(thread.threadId)))).flat();
 
-  const restartableRuns = roleRuns.filter((run) =>
-    run.status === "queued" || run.status === "running" || run.status === "resuming"
+  const orphanedThreadRuns = roleRuns.filter((run) => !threadIds.has(run.threadId));
+  const failedRunKeys: string[] = [];
+  for (const run of orphanedThreadRuns) {
+    if (isTerminalRoleRun(run)) {
+      continue;
+    }
+    await input.roleRunStore.put({
+      ...run,
+      status: "failed",
+      workerSessions: {},
+    });
+    failedRunKeys.push(run.runKey);
+  }
+
+  const restartableRuns = roleRuns.filter(
+    (run) => threadIds.has(run.threadId) && (run.status === "queued" || run.status === "running" || run.status === "resuming")
   );
 
   await Promise.all(restartableRuns.map((run) => input.roleLoopRunner.ensureRunning(run.runKey)));
@@ -25,5 +43,12 @@ export async function recoverRoleRunsOnStartup(input: {
     restartedRunningRuns: restartableRuns.filter((run) => run.status === "running").length,
     restartedResumingRuns: restartableRuns.filter((run) => run.status === "resuming").length,
     restartedRunKeys: restartableRuns.map((run) => run.runKey),
+    orphanedThreadRuns: orphanedThreadRuns.length,
+    failedOrphanedRuns: failedRunKeys.length,
+    failedRunKeys,
   };
+}
+
+function isTerminalRoleRun(run: RoleRunState): boolean {
+  return run.status === "done" || run.status === "failed";
 }

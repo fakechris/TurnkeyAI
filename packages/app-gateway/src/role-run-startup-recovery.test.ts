@@ -85,8 +85,28 @@ test("role run startup recovery restarts queued running and resuming role runs",
         },
       ],
     ],
+    [
+      "thread-orphan",
+      [
+        {
+          runKey: "run:orphaned",
+          threadId: "thread-orphan",
+          roleId: "role-3",
+          mode: "group",
+          status: "waiting_worker",
+          iterationCount: 1,
+          maxIterations: 4,
+          inbox: [],
+          lastActiveAt: 14,
+          workerSessions: {
+            browser: "worker:orphaned",
+          },
+        },
+      ],
+    ],
   ]);
   const restartedRunKeys: string[] = [];
+  const persistedRuns = new Map<string, RoleRunState>();
 
   const result = await recoverRoleRunsOnStartup({
     teamThreadStore: {
@@ -98,6 +118,12 @@ test("role run startup recovery restarts queued running and resuming role runs",
       async listByThread(threadId: string) {
         return roleRuns.get(threadId) ?? [];
       },
+      async listAll() {
+        return [...roleRuns.values()].flat();
+      },
+      async put(runState: RoleRunState) {
+        persistedRuns.set(runState.runKey, runState);
+      },
     } as any,
     roleLoopRunner: {
       async ensureRunning(runKey: string) {
@@ -107,11 +133,26 @@ test("role run startup recovery restarts queued running and resuming role runs",
   });
 
   assert.deepEqual(result, {
-    totalRoleRuns: 4,
+    totalRoleRuns: 5,
     restartedQueuedRuns: 1,
     restartedRunningRuns: 1,
     restartedResumingRuns: 1,
     restartedRunKeys: ["run:queued", "run:running", "run:resuming"],
+    orphanedThreadRuns: 1,
+    failedOrphanedRuns: 1,
+    failedRunKeys: ["run:orphaned"],
   });
   assert.deepEqual(restartedRunKeys, ["run:queued", "run:running", "run:resuming"]);
+  assert.deepEqual(persistedRuns.get("run:orphaned"), {
+    runKey: "run:orphaned",
+    threadId: "thread-orphan",
+    roleId: "role-3",
+    mode: "group",
+    status: "failed",
+    iterationCount: 1,
+    maxIterations: 4,
+    inbox: [],
+    lastActiveAt: 14,
+    workerSessions: {},
+  });
 });

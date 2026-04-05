@@ -519,6 +519,9 @@ test("runtime query service attaches role run startup recovery summary when avai
       restartedRunningRuns: 1,
       restartedResumingRuns: 1,
       restartedRunKeys: ["run:q1", "run:q2", "run:r1", "run:resume1"],
+      orphanedThreadRuns: 1,
+      failedOrphanedRuns: 1,
+      failedRunKeys: ["run:orphaned"],
     }),
     teamThreadStore: {
       async list() {
@@ -600,5 +603,8 @@ test("runtime query service attaches role run startup recovery summary when avai
     restartedRunningRuns: 1,
     restartedResumingRuns: 1,
     restartedRunKeys: ["run:q1", "run:q2", "run:r1", "run:resume1"],
+    orphanedThreadRuns: 1,
+    failedOrphanedRuns: 1,
+    failedRunKeys: ["run:orphaned"],
   });
 });

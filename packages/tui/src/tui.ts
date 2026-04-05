@@ -993,7 +993,7 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
   }
   if (report.roleRunStartupRecovery) {
     console.log(
-      `  role run startup recovery: total=${report.roleRunStartupRecovery.totalRoleRuns} restarted-queued=${report.roleRunStartupRecovery.restartedQueuedRuns} restarted-running=${report.roleRunStartupRecovery.restartedRunningRuns} restarted-resuming=${report.roleRunStartupRecovery.restartedResumingRuns}`
+      `  role run startup recovery: total=${report.roleRunStartupRecovery.totalRoleRuns} restarted-queued=${report.roleRunStartupRecovery.restartedQueuedRuns} restarted-running=${report.roleRunStartupRecovery.restartedRunningRuns} restarted-resuming=${report.roleRunStartupRecovery.restartedResumingRuns} orphaned=${report.roleRunStartupRecovery.orphanedThreadRuns} failed-orphaned=${report.roleRunStartupRecovery.failedOrphanedRuns}`
     );
   }
   printRuntimeSummaryEntries("  attention chains:", report.attentionChains);
@@ -1410,7 +1410,7 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   }
   if (report.roleRunStartupRecovery) {
     console.log(
-      `  role run startup recovery: total=${report.roleRunStartupRecovery.totalRoleRuns} restarted-queued=${report.roleRunStartupRecovery.restartedQueuedRuns} restarted-running=${report.roleRunStartupRecovery.restartedRunningRuns} restarted-resuming=${report.roleRunStartupRecovery.restartedResumingRuns}`
+      `  role run startup recovery: total=${report.roleRunStartupRecovery.totalRoleRuns} restarted-queued=${report.roleRunStartupRecovery.restartedQueuedRuns} restarted-running=${report.roleRunStartupRecovery.restartedRunningRuns} restarted-resuming=${report.roleRunStartupRecovery.restartedResumingRuns} orphaned=${report.roleRunStartupRecovery.orphanedThreadRuns} failed-orphaned=${report.roleRunStartupRecovery.failedOrphanedRuns}`
     );
   }
   console.log(
