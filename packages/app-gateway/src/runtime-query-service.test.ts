@@ -641,10 +641,12 @@ test("runtime query service attaches flow recovery startup reconcile summary whe
     },
     getFlowRecoveryStartupReconcileResult: () => ({
       orphanedFlows: 1,
+      abortedOrphanedFlows: 1,
       orphanedRecoveryRuns: 1,
       missingFlowRecoveryRuns: 2,
       crossThreadFlowRecoveryRuns: 1,
       failedRecoveryRuns: 3,
+      affectedFlowIds: ["flow:1"],
       affectedRecoveryRunIds: ["recovery:1", "recovery:2", "recovery:3"],
     }),
     teamThreadStore: {
@@ -723,10 +725,12 @@ test("runtime query service attaches flow recovery startup reconcile summary whe
 
   assert.deepEqual(report.flowRecoveryStartupReconcile, {
     orphanedFlows: 1,
+    abortedOrphanedFlows: 1,
     orphanedRecoveryRuns: 1,
     missingFlowRecoveryRuns: 2,
     crossThreadFlowRecoveryRuns: 1,
     failedRecoveryRuns: 3,
+    affectedFlowIds: ["flow:1"],
     affectedRecoveryRunIds: ["recovery:1", "recovery:2", "recovery:3"],
   });
 });

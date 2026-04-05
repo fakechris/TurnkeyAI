@@ -638,7 +638,7 @@ export function buildOperatorTriageReport(input: {
       headline:
         `flow/recovery startup reconcile affected=${input.summary.flowRecoveryStartupReconcile?.failedRecoveryRuns ?? 0}`,
       reason:
-        `Startup reconcile found orphaned-flows=${input.summary.flowRecoveryStartupReconcile?.orphanedFlows ?? 0}, orphaned-recovery-runs=${input.summary.flowRecoveryStartupReconcile?.orphanedRecoveryRuns ?? 0}, missing-flow-recovery-runs=${input.summary.flowRecoveryStartupReconcile?.missingFlowRecoveryRuns ?? 0}, cross-thread-flow-recovery-runs=${input.summary.flowRecoveryStartupReconcile?.crossThreadFlowRecoveryRuns ?? 0}.`,
+        `Startup reconcile found orphaned-flows=${input.summary.flowRecoveryStartupReconcile?.orphanedFlows ?? 0}, aborted-orphaned-flows=${input.summary.flowRecoveryStartupReconcile?.abortedOrphanedFlows ?? 0}, orphaned-recovery-runs=${input.summary.flowRecoveryStartupReconcile?.orphanedRecoveryRuns ?? 0}, missing-flow-recovery-runs=${input.summary.flowRecoveryStartupReconcile?.missingFlowRecoveryRuns ?? 0}, cross-thread-flow-recovery-runs=${input.summary.flowRecoveryStartupReconcile?.crossThreadFlowRecoveryRuns ?? 0}.`,
       nextStep: "inspect_runtime_flow_recovery",
       commandHint: "runtime-summary 10",
       state: "flow_recovery_startup_reconcile",

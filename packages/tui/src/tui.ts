@@ -1001,7 +1001,7 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
   }
   if (report.flowRecoveryStartupReconcile) {
     console.log(
-      `  flow/recovery startup reconcile: orphaned-flows=${report.flowRecoveryStartupReconcile.orphanedFlows} orphaned-recovery-runs=${report.flowRecoveryStartupReconcile.orphanedRecoveryRuns} missing-flow-recovery-runs=${report.flowRecoveryStartupReconcile.missingFlowRecoveryRuns} cross-thread-flow-recovery-runs=${report.flowRecoveryStartupReconcile.crossThreadFlowRecoveryRuns} failed-recovery-runs=${report.flowRecoveryStartupReconcile.failedRecoveryRuns}`
+      `  flow/recovery startup reconcile: orphaned-flows=${report.flowRecoveryStartupReconcile.orphanedFlows} aborted-orphaned-flows=${report.flowRecoveryStartupReconcile.abortedOrphanedFlows} orphaned-recovery-runs=${report.flowRecoveryStartupReconcile.orphanedRecoveryRuns} missing-flow-recovery-runs=${report.flowRecoveryStartupReconcile.missingFlowRecoveryRuns} cross-thread-flow-recovery-runs=${report.flowRecoveryStartupReconcile.crossThreadFlowRecoveryRuns} failed-recovery-runs=${report.flowRecoveryStartupReconcile.failedRecoveryRuns}`
     );
   }
   printRuntimeSummaryEntries("  attention chains:", report.attentionChains);
@@ -1426,7 +1426,7 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   }
   if (report.flowRecoveryStartupReconcile) {
     console.log(
-      `  flow/recovery startup reconcile: orphaned-flows=${report.flowRecoveryStartupReconcile.orphanedFlows} orphaned-recovery-runs=${report.flowRecoveryStartupReconcile.orphanedRecoveryRuns} missing-flow-recovery-runs=${report.flowRecoveryStartupReconcile.missingFlowRecoveryRuns} cross-thread-flow-recovery-runs=${report.flowRecoveryStartupReconcile.crossThreadFlowRecoveryRuns} failed-recovery-runs=${report.flowRecoveryStartupReconcile.failedRecoveryRuns}`
+      `  flow/recovery startup reconcile: orphaned-flows=${report.flowRecoveryStartupReconcile.orphanedFlows} aborted-orphaned-flows=${report.flowRecoveryStartupReconcile.abortedOrphanedFlows} orphaned-recovery-runs=${report.flowRecoveryStartupReconcile.orphanedRecoveryRuns} missing-flow-recovery-runs=${report.flowRecoveryStartupReconcile.missingFlowRecoveryRuns} cross-thread-flow-recovery-runs=${report.flowRecoveryStartupReconcile.crossThreadFlowRecoveryRuns} failed-recovery-runs=${report.flowRecoveryStartupReconcile.failedRecoveryRuns}`
     );
   }
   console.log(

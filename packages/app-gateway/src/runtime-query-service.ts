@@ -95,10 +95,12 @@ export function createRuntimeQueryService(input: {
   getFlowRecoveryStartupReconcileResult?: () =>
     | {
         orphanedFlows: number;
+        abortedOrphanedFlows: number;
         orphanedRecoveryRuns: number;
         missingFlowRecoveryRuns: number;
         crossThreadFlowRecoveryRuns: number;
         failedRecoveryRuns: number;
+        affectedFlowIds: string[];
         affectedRecoveryRunIds: string[];
       }
     | undefined;

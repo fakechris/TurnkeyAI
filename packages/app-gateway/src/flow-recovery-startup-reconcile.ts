@@ -22,7 +22,23 @@ export async function reconcileFlowRecoveryOnStartup(input: {
     (await Promise.all(threads.map((thread) => input.recoveryRunStore.listByThread(thread.threadId)))).flat();
 
   const flowsById = new Map(flows.map((flow) => [flow.flowId, flow]));
-  const orphanedFlows = flows.filter((flow) => !threadIds.has(flow.threadId)).length;
+  const orphanedFlows = flows.filter((flow) => !threadIds.has(flow.threadId));
+  const affectedFlowIds: string[] = [];
+  let abortedOrphanedFlows = 0;
+  for (const flow of orphanedFlows) {
+    if (flow.status === "completed" || flow.status === "failed" || flow.status === "aborted") {
+      continue;
+    }
+    const { nextExpectedRoleId: _nextExpectedRoleId, ...flowWithoutNextExpectedRole } = flow;
+    await input.flowLedgerStore.put({
+      ...flowWithoutNextExpectedRole,
+      status: "aborted",
+      activeRoleIds: [],
+      updatedAt: input.clock.now(),
+    });
+    affectedFlowIds.push(flow.flowId);
+    abortedOrphanedFlows += 1;
+  }
   const orphanedRecoveryRuns = recoveryRuns.filter((run) => !threadIds.has(run.threadId));
   const affectedRecoveryRunIds: string[] = [];
   let missingFlowRecoveryRuns = 0;
@@ -54,11 +70,13 @@ export async function reconcileFlowRecoveryOnStartup(input: {
   }
 
   return {
-    orphanedFlows,
+    orphanedFlows: orphanedFlows.length,
+    abortedOrphanedFlows,
     orphanedRecoveryRuns: orphanedRecoveryRuns.length,
     missingFlowRecoveryRuns,
     crossThreadFlowRecoveryRuns,
     failedRecoveryRuns,
+    affectedFlowIds,
     affectedRecoveryRunIds,
   };
 }

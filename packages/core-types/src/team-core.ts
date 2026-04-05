@@ -307,10 +307,12 @@ export interface RuntimeSummaryReport {
   };
   flowRecoveryStartupReconcile?: {
     orphanedFlows: number;
+    abortedOrphanedFlows: number;
     orphanedRecoveryRuns: number;
     missingFlowRecoveryRuns: number;
     crossThreadFlowRecoveryRuns: number;
     failedRecoveryRuns: number;
+    affectedFlowIds: RunKey[];
     affectedRecoveryRunIds: RunKey[];
   };
 }

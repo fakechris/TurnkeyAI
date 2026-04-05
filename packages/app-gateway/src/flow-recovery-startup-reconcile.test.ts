@@ -114,6 +114,7 @@ test("flow/recovery startup reconcile fails orphaned and flow-mismatched recover
       updatedAt: 1,
     },
   ];
+  const persistedFlows = new Map<string, FlowLedger>();
   const persisted = new Map<string, RecoveryRun>();
 
   const result = await reconcileFlowRecoveryOnStartup({
@@ -129,6 +130,9 @@ test("flow/recovery startup reconcile fails orphaned and flow-mismatched recover
       },
       async listByThread() {
         return [];
+      },
+      async put(flow: FlowLedger) {
+        persistedFlows.set(flow.flowId, flow);
       },
     } as any,
     recoveryRunStore: {
@@ -146,12 +150,16 @@ test("flow/recovery startup reconcile fails orphaned and flow-mismatched recover
 
   assert.deepEqual(result, {
     orphanedFlows: 1,
+    abortedOrphanedFlows: 1,
     orphanedRecoveryRuns: 1,
     missingFlowRecoveryRuns: 1,
     crossThreadFlowRecoveryRuns: 1,
     failedRecoveryRuns: 3,
+    affectedFlowIds: ["flow-orphan"],
     affectedRecoveryRunIds: ["recovery:missing-flow", "recovery:cross-thread", "recovery:orphan"],
   });
+  assert.equal(persistedFlows.get("flow-orphan")?.status, "aborted");
+  assert.deepEqual(persistedFlows.get("flow-orphan")?.activeRoleIds, []);
   assert.equal(persisted.get("recovery:missing-flow")?.status, "failed");
   assert.equal(persisted.get("recovery:missing-flow")?.nextAction, "stop");
   assert.equal(persisted.get("recovery:cross-thread")?.requiresManualIntervention, true);
