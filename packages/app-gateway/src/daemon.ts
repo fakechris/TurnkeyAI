@@ -186,6 +186,7 @@ import { createRuntimeQueryService } from "./runtime-query-service";
 import { recoverRoleRunsOnStartup } from "./role-run-startup-recovery";
 import { reconcileFlowRecoveryOnStartup } from "./flow-recovery-startup-reconcile";
 import { reconcileRuntimeChainsOnStartup } from "./runtime-chain-startup-reconcile";
+import { reconcileRuntimeChainArtifactsOnStartup } from "./runtime-chain-artifact-startup-reconcile";
 import { reconcileWorkerBindingsOnStartup } from "./worker-binding-startup-reconcile";
 import { handleBrowserRoutes, type BrowserTaskRouteBody } from "./routes/browser-routes";
 import { handleInspectionRoutes } from "./routes/inspection-routes";
@@ -566,6 +567,13 @@ const runtimeChainStartupReconcileResult = await reconcileRuntimeChainsOnStartup
   flowLedgerStore,
   runtimeChainStore,
 });
+const runtimeChainArtifactStartupReconcileResult = await reconcileRuntimeChainArtifactsOnStartup({
+  teamThreadStore,
+  runtimeChainStore,
+  runtimeChainStatusStore,
+  runtimeChainSpanStore,
+  runtimeChainEventStore,
+});
 if (
   roleRunStartupRecoveryResult.restartedQueuedRuns > 0 ||
   roleRunStartupRecoveryResult.restartedRunningRuns > 0 ||
@@ -582,6 +590,9 @@ if (
 }
 if (runtimeChainStartupReconcileResult.affectedChainIds.length > 0) {
   console.info("runtime chain startup reconcile completed", runtimeChainStartupReconcileResult);
+}
+if (runtimeChainArtifactStartupReconcileResult.affectedChainIds.length > 0) {
+  console.info("runtime chain artifact startup reconcile completed", runtimeChainArtifactStartupReconcileResult);
 }
 const scheduledTaskRuntime = new DefaultScheduledTaskRuntime({
   scheduledTaskStore,
@@ -610,6 +621,7 @@ const runtimeQueryService = createRuntimeQueryService({
   getRoleRunStartupRecoveryResult: () => roleRunStartupRecoveryResult,
   getFlowRecoveryStartupReconcileResult: () => flowRecoveryStartupReconcileResult,
   getRuntimeChainStartupReconcileResult: () => runtimeChainStartupReconcileResult,
+  getRuntimeChainArtifactStartupReconcileResult: () => runtimeChainArtifactStartupReconcileResult,
   teamThreadStore,
   flowLedgerStore,
   roleRunStore,

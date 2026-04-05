@@ -64,6 +64,22 @@ export class FileRuntimeChainSpanStore implements RuntimeChainSpanStore {
     });
   }
 
+  async listAll(): Promise<RuntimeChainSpan[]> {
+    const byIdFilePaths = await listJsonFiles(path.join(this.rootDir, "by-id"));
+    if (byIdFilePaths.length > 0) {
+      const records = await Promise.all(byIdFilePaths.map((filePath) => readJsonFile<RuntimeChainSpan>(filePath)));
+      return records
+        .filter((record): record is RuntimeChainSpan => record !== null)
+        .sort((left, right) => left.createdAt - right.createdAt);
+    }
+
+    const legacyFilePaths = await listJsonFiles(this.rootDir);
+    const records = await Promise.all(legacyFilePaths.map((filePath) => readJsonFile<RuntimeChainSpan>(filePath)));
+    return records
+      .filter((record): record is RuntimeChainSpan => record !== null)
+      .sort((left, right) => left.createdAt - right.createdAt);
+  }
+
   private byIdFilePath(spanId: string): string {
     return path.join(this.rootDir, "by-id", `${sanitizeSpanId(spanId)}.json`);
   }

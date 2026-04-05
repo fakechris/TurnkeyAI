@@ -611,6 +611,19 @@ export interface RuntimeChainStartupReconcileResult {
   affectedChainIds: RunKey[];
 }
 
+export interface RuntimeChainArtifactStartupReconcileResult {
+  orphanedStatuses: number;
+  crossThreadStatuses: number;
+  orphanedSpans: number;
+  crossThreadSpans: number;
+  crossFlowSpans: number;
+  orphanedEvents: number;
+  missingSpanEvents: number;
+  crossThreadEvents: number;
+  crossChainEvents: number;
+  affectedChainIds: RunKey[];
+}
+
 export interface SupervisorUserMessageInput {
   thread: TeamThread;
   flow: FlowLedger;

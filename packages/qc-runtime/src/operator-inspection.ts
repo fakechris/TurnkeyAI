@@ -305,6 +305,9 @@ export function buildOperatorSummaryReport(input: {
     ...(input.runtimeSummary?.runtimeChainStartupReconcile
       ? { runtimeChainStartupReconcile: input.runtimeSummary.runtimeChainStartupReconcile }
       : {}),
+    ...(input.runtimeSummary?.runtimeChainArtifactStartupReconcile
+      ? { runtimeChainArtifactStartupReconcile: input.runtimeSummary.runtimeChainArtifactStartupReconcile }
+      : {}),
     promptAttentionCount,
     totalAttentionCount:
       flow.attentionCount + replay.attentionCount + governance.attentionCount + recovery.attentionCount + promptAttentionCount,
@@ -659,6 +662,20 @@ export function buildOperatorTriageReport(input: {
       nextStep: "inspect_runtime_chains",
       commandHint: "runtime-summary 10",
       state: "runtime_chain_startup_reconcile",
+    });
+  }
+  if ((input.summary.runtimeChainArtifactStartupReconcile?.affectedChainIds.length ?? 0) > 0) {
+    focusAreas.push({
+      area: "runtime",
+      label: "runtime-chain-artifact-startup-reconcile",
+      severity: "warning",
+      headline:
+        `runtime chain artifacts drift affected=${input.summary.runtimeChainArtifactStartupReconcile?.affectedChainIds.length ?? 0}`,
+      reason:
+        `Startup reconcile found orphaned-statuses=${input.summary.runtimeChainArtifactStartupReconcile?.orphanedStatuses ?? 0}, cross-thread-statuses=${input.summary.runtimeChainArtifactStartupReconcile?.crossThreadStatuses ?? 0}, orphaned-spans=${input.summary.runtimeChainArtifactStartupReconcile?.orphanedSpans ?? 0}, cross-thread-spans=${input.summary.runtimeChainArtifactStartupReconcile?.crossThreadSpans ?? 0}, cross-flow-spans=${input.summary.runtimeChainArtifactStartupReconcile?.crossFlowSpans ?? 0}, orphaned-events=${input.summary.runtimeChainArtifactStartupReconcile?.orphanedEvents ?? 0}, missing-span-events=${input.summary.runtimeChainArtifactStartupReconcile?.missingSpanEvents ?? 0}, cross-thread-events=${input.summary.runtimeChainArtifactStartupReconcile?.crossThreadEvents ?? 0}, cross-chain-events=${input.summary.runtimeChainArtifactStartupReconcile?.crossChainEvents ?? 0}.`,
+      nextStep: "inspect_runtime_chain_artifacts",
+      commandHint: "runtime-summary 10",
+      state: "runtime_chain_artifact_startup_reconcile",
     });
   }
 

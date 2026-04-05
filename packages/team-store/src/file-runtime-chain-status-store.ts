@@ -73,6 +73,22 @@ export class FileRuntimeChainStatusStore implements RuntimeChainStatusStore {
     return active;
   }
 
+  async listAll(): Promise<RuntimeChainStatus[]> {
+    const byIdFiles = await listJsonFiles(path.join(this.rootDir, "by-id"));
+    if (byIdFiles.length > 0) {
+      const records = await Promise.all(byIdFiles.map((filePath) => readJsonFile<RuntimeChainStatus>(filePath)));
+      return records
+        .filter((record): record is RuntimeChainStatus => record !== null)
+        .sort((left, right) => right.updatedAt - left.updatedAt);
+    }
+
+    const legacyFilePaths = await listJsonFiles(this.rootDir);
+    const records = await Promise.all(legacyFilePaths.map((filePath) => readJsonFile<RuntimeChainStatus>(filePath)));
+    return records
+      .filter((record): record is RuntimeChainStatus => record !== null)
+      .sort((left, right) => right.updatedAt - left.updatedAt);
+  }
+
   private byIdFilePath(chainId: string): string {
     return path.join(this.rootDir, "by-id", `${sanitizeChainId(chainId)}.json`);
   }

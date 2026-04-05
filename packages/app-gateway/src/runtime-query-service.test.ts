@@ -848,3 +848,129 @@ test("runtime query service attaches runtime chain startup reconcile summary whe
     affectedChainIds: ["chain:1", "chain:2"],
   });
 });
+
+test("runtime query service attaches runtime chain artifact startup reconcile summary when available", async () => {
+  const service = createRuntimeQueryService({
+    clock: { now: () => 1000 },
+    workerRuntime: {
+      async spawn() {
+        return null;
+      },
+      async send() {
+        return null;
+      },
+      async resume() {
+        return null;
+      },
+      async interrupt() {
+        return null;
+      },
+      async cancel() {
+        return null;
+      },
+      async getState() {
+        return null;
+      },
+      async maybeRunForRole() {
+        return null;
+      },
+    },
+    getRuntimeChainArtifactStartupReconcileResult: () => ({
+      orphanedStatuses: 1,
+      crossThreadStatuses: 1,
+      orphanedSpans: 2,
+      crossThreadSpans: 1,
+      crossFlowSpans: 1,
+      orphanedEvents: 1,
+      missingSpanEvents: 2,
+      crossThreadEvents: 1,
+      crossChainEvents: 1,
+      affectedChainIds: ["chain:1", "chain:2"],
+    }),
+    teamThreadStore: {
+      async list() {
+        return [];
+      },
+    } as any,
+    flowLedgerStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    roleRunStore: {
+      async listByThread() {
+        return [];
+      },
+    } as any,
+    runtimeChainStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    runtimeChainStatusStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    runtimeChainSpanStore: {
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    runtimeChainEventStore: {
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    runtimeProgressStore: {
+      async listByThread() {
+        return [];
+      },
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    recoveryRunStore: {
+      async get() {
+        return null;
+      },
+      async listByThread() {
+        return [];
+      },
+    } as any,
+    recoveryRunEventStore: {
+      async listByRecoveryRun() {
+        return [];
+      },
+    } as any,
+    loadRecoveryRuntime: async () => ({
+      records: [],
+      report: {} as never,
+      runs: [],
+    }),
+  });
+
+  const report = await service.loadRuntimeSummary(null, 10);
+
+  assert.deepEqual(report.runtimeChainArtifactStartupReconcile, {
+    orphanedStatuses: 1,
+    crossThreadStatuses: 1,
+    orphanedSpans: 2,
+    crossThreadSpans: 1,
+    crossFlowSpans: 1,
+    orphanedEvents: 1,
+    missingSpanEvents: 2,
+    crossThreadEvents: 1,
+    crossChainEvents: 1,
+    affectedChainIds: ["chain:1", "chain:2"],
+  });
+});

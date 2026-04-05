@@ -112,6 +112,20 @@ export function createRuntimeQueryService(input: {
         affectedChainIds: string[];
       }
     | undefined;
+  getRuntimeChainArtifactStartupReconcileResult?: () =>
+    | {
+        orphanedStatuses: number;
+        crossThreadStatuses: number;
+        orphanedSpans: number;
+        crossThreadSpans: number;
+        crossFlowSpans: number;
+        orphanedEvents: number;
+        missingSpanEvents: number;
+        crossThreadEvents: number;
+        crossChainEvents: number;
+        affectedChainIds: string[];
+      }
+    | undefined;
   teamThreadStore: FileTeamThreadStore;
   flowLedgerStore: FileFlowLedgerStore;
   roleRunStore: FileRoleRunStore;
@@ -132,6 +146,7 @@ export function createRuntimeQueryService(input: {
     getRoleRunStartupRecoveryResult,
     getFlowRecoveryStartupReconcileResult,
     getRuntimeChainStartupReconcileResult,
+    getRuntimeChainArtifactStartupReconcileResult,
     teamThreadStore,
     flowLedgerStore,
     roleRunStore,
@@ -343,6 +358,7 @@ export function createRuntimeQueryService(input: {
       const roleRunStartupRecovery = getRoleRunStartupRecoveryResult?.();
       const flowRecoveryStartupReconcile = getFlowRecoveryStartupReconcileResult?.();
       const runtimeChainStartupReconcile = getRuntimeChainStartupReconcileResult?.();
+      const runtimeChainArtifactStartupReconcile = getRuntimeChainArtifactStartupReconcileResult?.();
       return workerStartupReconcile
         ? {
             ...report,
@@ -352,6 +368,7 @@ export function createRuntimeQueryService(input: {
             ...(roleRunStartupRecovery ? { roleRunStartupRecovery } : {}),
             ...(flowRecoveryStartupReconcile ? { flowRecoveryStartupReconcile } : {}),
             ...(runtimeChainStartupReconcile ? { runtimeChainStartupReconcile } : {}),
+            ...(runtimeChainArtifactStartupReconcile ? { runtimeChainArtifactStartupReconcile } : {}),
           }
         : workerSessionHealth
           ? {
@@ -361,6 +378,7 @@ export function createRuntimeQueryService(input: {
               ...(roleRunStartupRecovery ? { roleRunStartupRecovery } : {}),
               ...(flowRecoveryStartupReconcile ? { flowRecoveryStartupReconcile } : {}),
               ...(runtimeChainStartupReconcile ? { runtimeChainStartupReconcile } : {}),
+              ...(runtimeChainArtifactStartupReconcile ? { runtimeChainArtifactStartupReconcile } : {}),
             }
           : workerBindingReconcile
             ? {
@@ -369,6 +387,7 @@ export function createRuntimeQueryService(input: {
                 ...(roleRunStartupRecovery ? { roleRunStartupRecovery } : {}),
                 ...(flowRecoveryStartupReconcile ? { flowRecoveryStartupReconcile } : {}),
                 ...(runtimeChainStartupReconcile ? { runtimeChainStartupReconcile } : {}),
+                ...(runtimeChainArtifactStartupReconcile ? { runtimeChainArtifactStartupReconcile } : {}),
               }
             : roleRunStartupRecovery
               ? {
@@ -376,17 +395,26 @@ export function createRuntimeQueryService(input: {
                   roleRunStartupRecovery,
                   ...(flowRecoveryStartupReconcile ? { flowRecoveryStartupReconcile } : {}),
                   ...(runtimeChainStartupReconcile ? { runtimeChainStartupReconcile } : {}),
+                  ...(runtimeChainArtifactStartupReconcile ? { runtimeChainArtifactStartupReconcile } : {}),
                 }
               : flowRecoveryStartupReconcile
                 ? {
                     ...report,
                     flowRecoveryStartupReconcile,
+                    ...(runtimeChainStartupReconcile ? { runtimeChainStartupReconcile } : {}),
+                    ...(runtimeChainArtifactStartupReconcile ? { runtimeChainArtifactStartupReconcile } : {}),
                   }
                 : runtimeChainStartupReconcile
                   ? {
                       ...report,
                       runtimeChainStartupReconcile,
+                      ...(runtimeChainArtifactStartupReconcile ? { runtimeChainArtifactStartupReconcile } : {}),
                     }
+                  : runtimeChainArtifactStartupReconcile
+                    ? {
+                        ...report,
+                        runtimeChainArtifactStartupReconcile,
+                      }
                 : report;
     },
 

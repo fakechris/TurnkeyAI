@@ -1009,6 +1009,11 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
       `  runtime chain startup reconcile: orphaned-thread-chains=${report.runtimeChainStartupReconcile.orphanedThreadChains} missing-flow-chains=${report.runtimeChainStartupReconcile.missingFlowChains} cross-thread-flow-chains=${report.runtimeChainStartupReconcile.crossThreadFlowChains} affected=${report.runtimeChainStartupReconcile.affectedChainIds.length}`
     );
   }
+  if (report.runtimeChainArtifactStartupReconcile) {
+    console.log(
+      `  runtime chain artifact startup reconcile: orphaned-statuses=${report.runtimeChainArtifactStartupReconcile.orphanedStatuses} cross-thread-statuses=${report.runtimeChainArtifactStartupReconcile.crossThreadStatuses} orphaned-spans=${report.runtimeChainArtifactStartupReconcile.orphanedSpans} cross-thread-spans=${report.runtimeChainArtifactStartupReconcile.crossThreadSpans} cross-flow-spans=${report.runtimeChainArtifactStartupReconcile.crossFlowSpans} orphaned-events=${report.runtimeChainArtifactStartupReconcile.orphanedEvents} missing-span-events=${report.runtimeChainArtifactStartupReconcile.missingSpanEvents} cross-thread-events=${report.runtimeChainArtifactStartupReconcile.crossThreadEvents} cross-chain-events=${report.runtimeChainArtifactStartupReconcile.crossChainEvents} affected=${report.runtimeChainArtifactStartupReconcile.affectedChainIds.length}`
+    );
+  }
   printRuntimeSummaryEntries("  attention chains:", report.attentionChains);
   printRuntimeSummaryEntries("  active chains:", report.activeChains);
   printRuntimeSummaryEntries("  waiting chains:", report.waitingChains);
@@ -1437,6 +1442,11 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   if (report.runtimeChainStartupReconcile) {
     console.log(
       `  runtime chain startup reconcile: orphaned-thread-chains=${report.runtimeChainStartupReconcile.orphanedThreadChains} missing-flow-chains=${report.runtimeChainStartupReconcile.missingFlowChains} cross-thread-flow-chains=${report.runtimeChainStartupReconcile.crossThreadFlowChains} affected=${report.runtimeChainStartupReconcile.affectedChainIds.length}`
+    );
+  }
+  if (report.runtimeChainArtifactStartupReconcile) {
+    console.log(
+      `  runtime chain artifact startup reconcile: orphaned-statuses=${report.runtimeChainArtifactStartupReconcile.orphanedStatuses} cross-thread-statuses=${report.runtimeChainArtifactStartupReconcile.crossThreadStatuses} orphaned-spans=${report.runtimeChainArtifactStartupReconcile.orphanedSpans} cross-thread-spans=${report.runtimeChainArtifactStartupReconcile.crossThreadSpans} cross-flow-spans=${report.runtimeChainArtifactStartupReconcile.crossFlowSpans} orphaned-events=${report.runtimeChainArtifactStartupReconcile.orphanedEvents} missing-span-events=${report.runtimeChainArtifactStartupReconcile.missingSpanEvents} cross-thread-events=${report.runtimeChainArtifactStartupReconcile.crossThreadEvents} cross-chain-events=${report.runtimeChainArtifactStartupReconcile.crossChainEvents} affected=${report.runtimeChainArtifactStartupReconcile.affectedChainIds.length}`
     );
   }
   console.log(

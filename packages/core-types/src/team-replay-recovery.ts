@@ -549,6 +549,7 @@ export interface OperatorSummaryReport {
   roleRunStartupRecovery?: RuntimeSummaryReport["roleRunStartupRecovery"];
   flowRecoveryStartupReconcile?: RuntimeSummaryReport["flowRecoveryStartupReconcile"];
   runtimeChainStartupReconcile?: RuntimeSummaryReport["runtimeChainStartupReconcile"];
+  runtimeChainArtifactStartupReconcile?: RuntimeSummaryReport["runtimeChainArtifactStartupReconcile"];
   promptAttentionCount: number;
   totalAttentionCount: number;
   attentionOverview?: {

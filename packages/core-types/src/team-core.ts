@@ -321,6 +321,18 @@ export interface RuntimeSummaryReport {
     crossThreadFlowChains: number;
     affectedChainIds: RunKey[];
   };
+  runtimeChainArtifactStartupReconcile?: {
+    orphanedStatuses: number;
+    crossThreadStatuses: number;
+    orphanedSpans: number;
+    crossThreadSpans: number;
+    crossFlowSpans: number;
+    orphanedEvents: number;
+    missingSpanEvents: number;
+    crossThreadEvents: number;
+    crossChainEvents: number;
+    affectedChainIds: RunKey[];
+  };
 }
 
 export interface RuntimeProgressEvent {
@@ -701,11 +713,13 @@ export interface RuntimeChainSpanStore {
   get(spanId: string): Promise<RuntimeChainSpan | null>;
   put(span: RuntimeChainSpan): Promise<void>;
   listByChain(chainId: string): Promise<RuntimeChainSpan[]>;
+  listAll?(): Promise<RuntimeChainSpan[]>;
 }
 
 export interface RuntimeChainEventStore {
   append(event: RuntimeChainEvent): Promise<void>;
   listByChain(chainId: string, limit?: number): Promise<RuntimeChainEvent[]>;
+  listAll?(): Promise<RuntimeChainEvent[]>;
 }
 
 export interface RuntimeChainStatusStore {
@@ -713,6 +727,7 @@ export interface RuntimeChainStatusStore {
   put(status: RuntimeChainStatus): Promise<void>;
   listByThread(threadId: ThreadId): Promise<RuntimeChainStatus[]>;
   listActive(limit?: number): Promise<RuntimeChainStatus[]>;
+  listAll?(): Promise<RuntimeChainStatus[]>;
 }
 
 export interface TeamRouteMap {

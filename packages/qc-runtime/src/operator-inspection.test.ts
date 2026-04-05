@@ -1329,7 +1329,7 @@ test("operator triage prioritizes compound incidents and surfaces runtime and pr
     summary,
     attention,
     runtime,
-    limit: 5,
+    limit: 10,
   });
 
   assert.equal(report.waitingManualCaseCount, 1);
@@ -1380,7 +1380,7 @@ test("operator triage uses a safe stale runtime fallback when chain details are 
       failedChains: [],
       recentlyResolved: [],
     },
-    limit: 5,
+    limit: 20,
   });
 
   const staleFocus = report.focusAreas.find((area) => area.label === "runtime-stale");
@@ -1457,6 +1457,18 @@ test("operator triage surfaces worker session drift when runtime summary reports
         crossThreadFlowChains: 1,
         affectedChainIds: ["chain:1", "chain:2"],
       },
+      runtimeChainArtifactStartupReconcile: {
+        orphanedStatuses: 1,
+        crossThreadStatuses: 1,
+        orphanedSpans: 1,
+        crossThreadSpans: 1,
+        crossFlowSpans: 1,
+        orphanedEvents: 1,
+        missingSpanEvents: 1,
+        crossThreadEvents: 1,
+        crossChainEvents: 1,
+        affectedChainIds: ["chain:1", "chain:2"],
+      },
     },
     limit: 10,
   });
@@ -1532,8 +1544,20 @@ test("operator triage surfaces worker session drift when runtime summary reports
         crossThreadFlowChains: 1,
         affectedChainIds: ["chain:1", "chain:2"],
       },
+      runtimeChainArtifactStartupReconcile: {
+        orphanedStatuses: 1,
+        crossThreadStatuses: 1,
+        orphanedSpans: 1,
+        crossThreadSpans: 1,
+        crossFlowSpans: 1,
+        orphanedEvents: 1,
+        missingSpanEvents: 1,
+        crossThreadEvents: 1,
+        crossChainEvents: 1,
+        affectedChainIds: ["chain:1", "chain:2"],
+      },
     },
-    limit: 5,
+    limit: 20,
   });
 
   const driftFocus = report.focusAreas.find((area) => area.label === "worker-session-drift");
@@ -1549,6 +1573,10 @@ test("operator triage surfaces worker session drift when runtime summary reports
   assert.equal(flowRecoveryFocus?.state, "flow_recovery_startup_reconcile");
   const runtimeChainFocus = report.focusAreas.find((area) => area.label === "runtime-chain-startup-reconcile");
   assert.equal(runtimeChainFocus?.state, "runtime_chain_startup_reconcile");
+  const runtimeChainArtifactFocus = report.focusAreas.find(
+    (area) => area.label === "runtime-chain-artifact-startup-reconcile"
+  );
+  assert.equal(runtimeChainArtifactFocus?.state, "runtime_chain_artifact_startup_reconcile");
 });
 
 function buildPromptBoundary(input: {
