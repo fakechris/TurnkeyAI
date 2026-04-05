@@ -576,6 +576,8 @@ export interface WorkerBindingStartupReconcileResult {
   clearedTerminalBindings: number;
   clearedCrossThreadBindings: number;
   roleRunsNeedingAttention: number;
+  roleRunsRequeued: number;
+  roleRunsFailed: number;
 }
 
 export interface SupervisorUserMessageInput {

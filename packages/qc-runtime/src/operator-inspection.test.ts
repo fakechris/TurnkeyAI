@@ -1419,6 +1419,16 @@ test("operator triage surfaces worker session drift when runtime summary reports
         orphanedSessions: 1,
         missingContextSessions: 1,
       },
+      workerBindingReconcile: {
+        totalRoleRuns: 2,
+        totalBindings: 2,
+        clearedMissingBindings: 1,
+        clearedTerminalBindings: 0,
+        clearedCrossThreadBindings: 0,
+        roleRunsNeedingAttention: 1,
+        roleRunsRequeued: 0,
+        roleRunsFailed: 1,
+      },
     },
     limit: 10,
   });
@@ -1456,6 +1466,16 @@ test("operator triage surfaces worker session drift when runtime summary reports
         orphanedSessions: 1,
         missingContextSessions: 1,
       },
+      workerBindingReconcile: {
+        totalRoleRuns: 2,
+        totalBindings: 2,
+        clearedMissingBindings: 1,
+        clearedTerminalBindings: 0,
+        clearedCrossThreadBindings: 0,
+        roleRunsNeedingAttention: 1,
+        roleRunsRequeued: 0,
+        roleRunsFailed: 1,
+      },
     },
     limit: 5,
   });
@@ -1465,6 +1485,8 @@ test("operator triage surfaces worker session drift when runtime summary reports
   assert.equal(report.workerSessionMissingContextCount, 1);
   assert.equal(driftFocus?.severity, "critical");
   assert.equal(driftFocus?.commandHint, "runtime-summary 10");
+  const bindingFocus = report.focusAreas.find((area) => area.label === "worker-binding-reconcile");
+  assert.equal(bindingFocus?.state, "worker_binding_reconcile");
 });
 
 function buildPromptBoundary(input: {

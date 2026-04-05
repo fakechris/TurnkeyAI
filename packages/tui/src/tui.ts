@@ -988,7 +988,7 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
   }
   if (report.workerBindingReconcile) {
     console.log(
-      `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention}`
+      `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention} requeued=${report.workerBindingReconcile.roleRunsRequeued} failed=${report.workerBindingReconcile.roleRunsFailed}`
     );
   }
   printRuntimeSummaryEntries("  attention chains:", report.attentionChains);
@@ -1400,7 +1400,7 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   }
   if (report.workerBindingReconcile) {
     console.log(
-      `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention}`
+      `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention} requeued=${report.workerBindingReconcile.roleRunsRequeued} failed=${report.workerBindingReconcile.roleRunsFailed}`
     );
   }
   console.log(

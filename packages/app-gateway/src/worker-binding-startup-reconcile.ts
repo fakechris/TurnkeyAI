@@ -36,6 +36,8 @@ export async function reconcileWorkerBindingsOnStartup(input: {
   let clearedTerminalBindings = 0;
   let clearedCrossThreadBindings = 0;
   let roleRunsNeedingAttention = 0;
+  let roleRunsRequeued = 0;
+  let roleRunsFailed = 0;
 
   for (const run of roleRuns) {
     const workerSessions = run.workerSessions ?? {};
@@ -75,14 +77,31 @@ export async function reconcileWorkerBindingsOnStartup(input: {
     }
 
     const remainingBindings = Object.keys(nextWorkerSessions).length;
-    if (changed) {
-      await input.roleRunStore.put({
-        ...run,
-        workerSessions: nextWorkerSessions,
-      });
-    }
+    let nextRun = changed
+      ? {
+          ...run,
+          workerSessions: nextWorkerSessions,
+        }
+      : run;
     if (isWorkerBoundRoleStatus(run.status) && remainingBindings === 0) {
       roleRunsNeedingAttention += 1;
+      if (run.inbox.length > 0) {
+        nextRun = {
+          ...nextRun,
+          status: "queued",
+        };
+        roleRunsRequeued += 1;
+      } else {
+        nextRun = {
+          ...nextRun,
+          status: "failed",
+        };
+        roleRunsFailed += 1;
+      }
+      changed = true;
+    }
+    if (changed) {
+      await input.roleRunStore.put(nextRun);
     }
   }
 
@@ -93,5 +112,7 @@ export async function reconcileWorkerBindingsOnStartup(input: {
     clearedTerminalBindings,
     clearedCrossThreadBindings,
     roleRunsNeedingAttention,
+    roleRunsRequeued,
+    roleRunsFailed,
   };
 }

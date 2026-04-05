@@ -181,9 +181,12 @@ test("worker binding startup reconcile clears missing, terminal, and cross-threa
     clearedTerminalBindings: 1,
     clearedCrossThreadBindings: 1,
     roleRunsNeedingAttention: 1,
+    roleRunsRequeued: 0,
+    roleRunsFailed: 1,
   });
   assert.deepEqual(persisted.get("run:1")?.workerSessions, {
     browser: "worker:bound",
   });
   assert.deepEqual(persisted.get("run:2")?.workerSessions, {});
+  assert.equal(persisted.get("run:2")?.status, "failed");
 });

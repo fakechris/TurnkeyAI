@@ -290,6 +290,8 @@ export interface RuntimeSummaryReport {
     clearedTerminalBindings: number;
     clearedCrossThreadBindings: number;
     roleRunsNeedingAttention: number;
+    roleRunsRequeued: number;
+    roleRunsFailed: number;
   };
 }
 

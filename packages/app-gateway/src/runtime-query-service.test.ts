@@ -398,6 +398,8 @@ test("runtime query service attaches worker binding reconcile summary when avail
       clearedTerminalBindings: 2,
       clearedCrossThreadBindings: 1,
       roleRunsNeedingAttention: 2,
+      roleRunsRequeued: 1,
+      roleRunsFailed: 1,
     }),
     teamThreadStore: {
       async list() {
@@ -480,5 +482,7 @@ test("runtime query service attaches worker binding reconcile summary when avail
     clearedTerminalBindings: 2,
     clearedCrossThreadBindings: 1,
     roleRunsNeedingAttention: 2,
+    roleRunsRequeued: 1,
+    roleRunsFailed: 1,
   });
 });

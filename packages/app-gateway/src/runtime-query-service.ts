@@ -74,6 +74,8 @@ export function createRuntimeQueryService(input: {
         clearedTerminalBindings: number;
         clearedCrossThreadBindings: number;
         roleRunsNeedingAttention: number;
+        roleRunsRequeued: number;
+        roleRunsFailed: number;
       }
     | undefined;
   teamThreadStore: FileTeamThreadStore;

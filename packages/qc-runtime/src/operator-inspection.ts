@@ -595,7 +595,7 @@ export function buildOperatorTriageReport(input: {
       severity: "warning",
       headline: `worker binding reconcile attention=${input.summary.workerBindingReconcile?.roleRunsNeedingAttention ?? 0}`,
       reason:
-        `Startup reconcile cleared missing=${input.summary.workerBindingReconcile?.clearedMissingBindings ?? 0}, terminal=${input.summary.workerBindingReconcile?.clearedTerminalBindings ?? 0}, cross-thread=${input.summary.workerBindingReconcile?.clearedCrossThreadBindings ?? 0} worker bindings.`,
+        `Startup reconcile cleared missing=${input.summary.workerBindingReconcile?.clearedMissingBindings ?? 0}, terminal=${input.summary.workerBindingReconcile?.clearedTerminalBindings ?? 0}, cross-thread=${input.summary.workerBindingReconcile?.clearedCrossThreadBindings ?? 0}, requeued=${input.summary.workerBindingReconcile?.roleRunsRequeued ?? 0}, failed=${input.summary.workerBindingReconcile?.roleRunsFailed ?? 0} worker bindings.`,
       nextStep: "inspect_runtime_worker_bindings",
       commandHint: "runtime-summary 10",
       state: "worker_binding_reconcile",
