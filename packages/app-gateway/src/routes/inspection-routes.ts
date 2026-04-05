@@ -17,6 +17,7 @@ export interface InspectionRouteDeps {
     limit: number,
     threadId: string | null
   ): Promise<unknown>;
+  listWorkerSessions(limit: number, threadId: string | null): Promise<unknown>;
   listStaleRuntimeChains(limit: number, threadId: string | null): Promise<unknown>;
   listRuntimeProgressByThread(threadId: string, limit: number): Promise<unknown>;
   loadRuntimeChainDetail(chainId: string, limit?: number): Promise<{ events: unknown[]; [key: string]: unknown } | null>;
@@ -137,6 +138,16 @@ export async function handleInspectionRoutes(input: {
       return true;
     }
     sendJson(res, 200, await deps.loadRuntimeSummary(url.searchParams.get("threadId"), limit));
+    return true;
+  }
+
+  if (req.method === "GET" && url.pathname === "/runtime-worker-sessions") {
+    const limit = parsePositiveLimit(url.searchParams.get("limit"));
+    if (limit == null) {
+      sendJson(res, 400, { error: "limit must be a positive integer" });
+      return true;
+    }
+    sendJson(res, 200, await deps.listWorkerSessions(limit, url.searchParams.get("threadId")));
     return true;
   }
 

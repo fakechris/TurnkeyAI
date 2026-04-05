@@ -694,6 +694,7 @@ const server = http.createServer(async (req, res) => {
           listRuntimeChainsByThread: (threadId, limit) => runtimeQueryService.listRuntimeChainEntriesByThread(threadId, limit),
           listActiveRuntimeChains: (limit, threadId) => runtimeQueryService.listActiveRuntimeChainEntries(limit, threadId),
           loadRuntimeSummary: (threadId, limit) => runtimeQueryService.loadRuntimeSummary(threadId, limit),
+          listWorkerSessions: (limit, threadId) => runtimeQueryService.listWorkerSessions(limit, threadId),
           listRuntimeChainsByCanonicalState: (state, limit, threadId) =>
             runtimeQueryService.listRuntimeChainsByCanonicalState(state, limit, threadId),
           listStaleRuntimeChains: (limit, threadId) => runtimeQueryService.listStaleRuntimeChainEntries(limit, threadId),

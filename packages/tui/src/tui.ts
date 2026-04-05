@@ -26,6 +26,7 @@ import type {
   TeamEvent,
   ThreadSessionMemoryRecord,
   ValidationOpsReport,
+  WorkerSessionRecord,
 } from "@turnkeyai/core-types/team";
 import {
   describeRecoveryRunGate,
@@ -214,6 +215,21 @@ while (true) {
         params.set("limit", String(limit));
       }
       printRuntimeSummary((await getJson(`/runtime-summary?${params.toString()}`)) as RuntimeSummaryReport);
+      continue;
+    }
+
+    if (command === "runtime-worker-sessions") {
+      const limit = Number(args || "10");
+      const params = new URLSearchParams();
+      if (currentThreadId) {
+        params.set("threadId", currentThreadId);
+      }
+      if (Number.isFinite(limit) && limit > 0) {
+        params.set("limit", String(limit));
+      }
+      printWorkerSessions(
+        (await getJson(`/runtime-worker-sessions?${params.toString()}`)) as WorkerSessionRecord[]
+      );
       continue;
     }
 
@@ -686,6 +702,7 @@ function printHelp(): void {
   console.log("  runtime-chains [limit]              show runtime chains for current thread");
   console.log("  runtime-active [limit]              show active runtime chains for current thread or all");
   console.log("  runtime-summary [limit]             show runtime chain summary for current thread or all");
+  console.log("  runtime-worker-sessions [limit]     show worker sessions for current thread or all");
   console.log("  runtime-waiting [limit]             show waiting runtime chains for current thread or all");
   console.log("  runtime-failed [limit]              show failed runtime chains for current thread or all");
   console.log("  runtime-stale [limit]               show stale runtime chains for current thread or all");
@@ -1020,6 +1037,27 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
   printRuntimeSummaryEntries("  stale chains:", report.staleChains);
   printRuntimeSummaryEntries("  failed chains:", report.failedChains);
   printRuntimeSummaryEntries("  recently resolved:", report.recentlyResolved);
+}
+
+function printWorkerSessions(records: WorkerSessionRecord[]): void {
+  if (records.length === 0) {
+    console.log("no worker sessions");
+    return;
+  }
+  for (const record of records) {
+    console.log(
+      [
+        `- ${record.workerRunKey}`,
+        `type=${record.state.workerType}`,
+        `status=${record.state.status}`,
+        `updated=${new Date(record.state.updatedAt).toISOString()}`,
+        record.context?.threadId ? `thread=${record.context.threadId}` : "thread=-",
+        record.context?.flowId ? `flow=${record.context.flowId}` : "flow=-",
+        record.context?.roleId ? `role=${record.context.roleId}` : "role=-",
+        record.context?.taskId ? `task=${record.context.taskId}` : "task=-",
+      ].join(" ")
+    );
+  }
 }
 
 function printRuntimeSummaryEntries(

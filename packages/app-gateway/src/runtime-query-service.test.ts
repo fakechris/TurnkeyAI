@@ -255,6 +255,177 @@ test("runtime query service surfaces worker session health for scoped thread sum
   } satisfies RuntimeSummaryReport["workerSessionHealth"]);
 });
 
+test("runtime query service lists scoped worker sessions in reverse update order", async () => {
+  const workerSessions: WorkerSessionRecord[] = [
+    {
+      workerRunKey: "worker:old",
+      executionToken: 1,
+      state: {
+        workerRunKey: "worker:old",
+        workerType: "browser",
+        status: "resumable",
+        createdAt: 10,
+        updatedAt: 20,
+      },
+      context: {
+        threadId: "thread-1",
+        flowId: "flow-1",
+        taskId: "task-1",
+        roleId: "role-1",
+        parentSpanId: "role:run-1",
+      },
+    },
+    {
+      workerRunKey: "worker:new",
+      executionToken: 1,
+      state: {
+        workerRunKey: "worker:new",
+        workerType: "browser",
+        status: "waiting_external",
+        createdAt: 11,
+        updatedAt: 30,
+      },
+      context: {
+        threadId: "thread-1",
+        flowId: "flow-1",
+        taskId: "task-2",
+        roleId: "role-1",
+        parentSpanId: "role:run-2",
+      },
+    },
+    {
+      workerRunKey: "worker:other-thread",
+      executionToken: 1,
+      state: {
+        workerRunKey: "worker:other-thread",
+        workerType: "browser",
+        status: "resumable",
+        createdAt: 12,
+        updatedAt: 40,
+      },
+      context: {
+        threadId: "thread-2",
+        flowId: "flow-2",
+        taskId: "task-3",
+        roleId: "role-2",
+        parentSpanId: "role:run-3",
+      },
+    },
+  ];
+
+  const service = createRuntimeQueryService({
+    clock: { now: () => 1000 },
+    workerRuntime: {
+      async spawn() {
+        return null;
+      },
+      async send() {
+        return null;
+      },
+      async resume() {
+        return null;
+      },
+      async interrupt() {
+        return null;
+      },
+      async cancel() {
+        return null;
+      },
+      async getState() {
+        return null;
+      },
+      async maybeRunForRole() {
+        return null;
+      },
+      async listSessions() {
+        return workerSessions;
+      },
+    },
+    teamThreadStore: {
+      async list() {
+        return [];
+      },
+    } as any,
+    flowLedgerStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    roleRunStore: {
+      async listByThread() {
+        return [];
+      },
+    } as any,
+    runtimeChainStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    runtimeChainStatusStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    runtimeChainSpanStore: {
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    runtimeChainEventStore: {
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    runtimeProgressStore: {
+      async listByThread() {
+        return [];
+      },
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    recoveryRunStore: {
+      async get() {
+        return null;
+      },
+      async listByThread() {
+        return [];
+      },
+    } as any,
+    recoveryRunEventStore: {
+      async listByRecoveryRun() {
+        return [];
+      },
+    } as any,
+    loadRecoveryRuntime: async () => ({
+      records: [],
+      report: {} as never,
+      runs: [],
+    }),
+  });
+
+  const scoped = await service.listWorkerSessions(10, "thread-1");
+  assert.deepEqual(
+    scoped.map((record) => record.workerRunKey),
+    ["worker:new", "worker:old"]
+  );
+
+  const unscoped = await service.listWorkerSessions(2);
+  assert.deepEqual(
+    unscoped.map((record) => record.workerRunKey),
+    ["worker:other-thread", "worker:new"]
+  );
+});
+
 test("runtime query service attaches startup reconcile summary when available", async () => {
   const service = createRuntimeQueryService({
     clock: { now: () => 1000 },

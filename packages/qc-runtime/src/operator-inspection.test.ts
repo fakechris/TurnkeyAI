@@ -1564,18 +1564,26 @@ test("operator triage surfaces worker session drift when runtime summary reports
   assert.equal(report.workerSessionOrphanCount, 1);
   assert.equal(report.workerSessionMissingContextCount, 1);
   assert.equal(driftFocus?.severity, "critical");
-  assert.equal(driftFocus?.commandHint, "runtime-summary 10");
+  assert.equal(driftFocus?.commandHint, "runtime-worker-sessions 10");
   const bindingFocus = report.focusAreas.find((area) => area.label === "worker-binding-reconcile");
+  assert.equal(bindingFocus?.commandHint, "runs");
   assert.equal(bindingFocus?.state, "worker_binding_reconcile");
   const startupRecoveryFocus = report.focusAreas.find((area) => area.label === "role-run-startup-recovery");
+  assert.equal(startupRecoveryFocus?.commandHint, "runs");
   assert.equal(startupRecoveryFocus?.state, "role_run_startup_recovery");
   const flowRecoveryFocus = report.focusAreas.find((area) => area.label === "flow-recovery-startup-reconcile");
+  assert.equal(flowRecoveryFocus?.commandHint, "recovery-run recovery:1");
+  assert.equal(flowRecoveryFocus?.caseKey, "recovery:1");
   assert.equal(flowRecoveryFocus?.state, "flow_recovery_startup_reconcile");
   const runtimeChainFocus = report.focusAreas.find((area) => area.label === "runtime-chain-startup-reconcile");
+  assert.equal(runtimeChainFocus?.commandHint, "runtime-chain chain:1");
+  assert.equal(runtimeChainFocus?.caseKey, "chain:1");
   assert.equal(runtimeChainFocus?.state, "runtime_chain_startup_reconcile");
   const runtimeChainArtifactFocus = report.focusAreas.find(
     (area) => area.label === "runtime-chain-artifact-startup-reconcile"
   );
+  assert.equal(runtimeChainArtifactFocus?.commandHint, "runtime-chain chain:1");
+  assert.equal(runtimeChainArtifactFocus?.caseKey, "chain:1");
   assert.equal(runtimeChainArtifactFocus?.state, "runtime_chain_artifact_startup_reconcile");
 });
 

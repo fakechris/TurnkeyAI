@@ -49,6 +49,7 @@ export interface RuntimeQueryService {
     limit: number,
     threadId?: string | null
   ): Promise<RuntimeChainEntry[]>;
+  listWorkerSessions(limit: number, threadId?: string | null): Promise<WorkerSessionRecord[]>;
   loadRuntimeSummary(threadId: string | null, limit: number): Promise<RuntimeSummaryReport>;
   listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]>;
   loadRuntimeChainDetail(
@@ -208,6 +209,22 @@ export function createRuntimeQueryService(input: {
     };
   }
 
+  async function listWorkerSessions(limit: number, threadId?: string | null): Promise<WorkerSessionRecord[]> {
+    if (!workerRuntime.listSessions) {
+      return [];
+    }
+    const sessions = await workerRuntime.listSessions();
+    return sessions
+      .filter((record) => {
+        if (!threadId) {
+          return true;
+        }
+        return record.context?.threadId === threadId;
+      })
+      .sort((left, right) => right.state.updatedAt - left.state.updatedAt)
+      .slice(0, limit);
+  }
+
   async function listAllRoleRuns(): Promise<RoleRunState[]> {
     const threads = await teamThreadStore.list();
     return (await Promise.all(threads.map((thread) => roleRunStore.listByThread(thread.threadId)))).flat();
@@ -342,6 +359,8 @@ export function createRuntimeQueryService(input: {
         .filter((entry) => entry.status.canonicalState === state)
         .slice(0, limit);
     },
+
+    listWorkerSessions,
 
     async loadRuntimeSummary(threadId: string | null, limit: number): Promise<RuntimeSummaryReport> {
       const [entries, workerSessionHealth] = await Promise.all([
