@@ -33,6 +33,7 @@ import type {
   WorkerKind,
 } from "@turnkeyai/core-types/team";
 import {
+  createRelayPayload,
   getContinuationContext,
   getDispatchPolicy,
   getMergeContext,
@@ -160,6 +161,16 @@ export class CoordinationEngine {
     const recentMessages = sanitizeRecentMessagesForDispatch(
       await this.deps.summaryBuilder.getRecentMessages(input.thread.threadId, MAX_RECENT_MESSAGES_PER_DISPATCH)
     );
+    const dispatchPolicy = {
+      allowParallel: flow.mode !== "serial",
+      allowReenter: true,
+      ...(input.fanOutGroupId ? { fanOutGroupId: input.fanOutGroupId } : {}),
+      ...(input.coverageTargetRoleIds?.length
+        ? { coverageTargetRoleIds: input.coverageTargetRoleIds }
+        : {}),
+      ...(input.mergeBackToRoleId ? { mergeBackToRoleId: input.mergeBackToRoleId } : {}),
+      sourceFlowMode: flow.mode,
+    };
 
     const handoff: HandoffEnvelope = {
       taskId: this.deps.idGenerator.taskId(),
@@ -168,17 +179,13 @@ export class CoordinationEngine {
       targetRoleId: input.toRoleId,
       activationType: input.activationType,
       threadId: input.thread.threadId,
-      payload: {
+      payload: createRelayPayload({
         threadId: input.thread.threadId,
-        intent: {
-          relayBrief: "",
-          recentMessages,
-          ...(input.instructions ? { instructions: input.instructions } : {}),
-        },
         relayBrief: "",
         recentMessages,
         ...(input.instructions ? { instructions: input.instructions } : {}),
-        ...(input.continuationContext || input.continuityMode || input.sessionTarget
+        ...(input.sessionTarget ? { sessionTarget: input.sessionTarget } : {}),
+        ...(input.continuationContext || input.continuityMode
           ? {
               continuity: {
                 ...(input.continuityMode ? { mode: input.continuityMode } : {}),
@@ -186,8 +193,6 @@ export class CoordinationEngine {
               },
             }
           : {}),
-        ...(input.sessionTarget ? { sessionTarget: input.sessionTarget } : {}),
-        ...(input.continuationContext ? { continuationContext: input.continuationContext } : {}),
         ...(input.mergeContext || input.parallelContext
           ? {
               coordination: {
@@ -196,33 +201,9 @@ export class CoordinationEngine {
               },
             }
           : {}),
-        ...(input.mergeContext ? { mergeContext: input.mergeContext } : {}),
-        ...(input.parallelContext ? { parallelContext: input.parallelContext } : {}),
-        constraints: {
-          ...(input.preferredWorkerKinds?.length ? { preferredWorkerKinds: input.preferredWorkerKinds } : {}),
-          dispatchPolicy: {
-            allowParallel: flow.mode !== "serial",
-            allowReenter: true,
-            ...(input.fanOutGroupId ? { fanOutGroupId: input.fanOutGroupId } : {}),
-            ...(input.coverageTargetRoleIds?.length
-              ? { coverageTargetRoleIds: input.coverageTargetRoleIds }
-              : {}),
-            ...(input.mergeBackToRoleId ? { mergeBackToRoleId: input.mergeBackToRoleId } : {}),
-            sourceFlowMode: flow.mode,
-          },
-        },
         ...(input.preferredWorkerKinds?.length ? { preferredWorkerKinds: input.preferredWorkerKinds } : {}),
-        dispatchPolicy: {
-          allowParallel: flow.mode !== "serial",
-          allowReenter: true,
-          ...(input.fanOutGroupId ? { fanOutGroupId: input.fanOutGroupId } : {}),
-          ...(input.coverageTargetRoleIds?.length
-            ? { coverageTargetRoleIds: input.coverageTargetRoleIds }
-            : {}),
-          ...(input.mergeBackToRoleId ? { mergeBackToRoleId: input.mergeBackToRoleId } : {}),
-          sourceFlowMode: flow.mode,
-        },
-      },
+        dispatchPolicy,
+      }),
       createdAt: this.deps.clock.now(),
     };
 

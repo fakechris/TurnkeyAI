@@ -14,6 +14,7 @@ import {
   getScheduledSessionTarget,
   getScheduledTargetRoleId,
   getScheduledTargetWorker,
+  normalizeScheduledTaskRecord,
 } from "@turnkeyai/core-types/team";
 import { decodeBrowserSessionPayload } from "@turnkeyai/core-types/browser-session-payload";
 import type { KeyedAsyncMutex } from "@turnkeyai/shared-utils/async-mutex";
@@ -396,19 +397,9 @@ export function createRecoveryActionService(input: {
     const rawTz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
     const tz = rawTz.trim() ? rawTz : "UTC";
 
-    return {
+    return normalizeScheduledTaskRecord({
       taskId: task.taskId,
       threadId: task.run.threadId,
-      targetRoleId: task.run.roleId,
-      ...(task.run.targetLayer === "worker" && task.run.targetWorker ? { targetWorker: task.run.targetWorker } : {}),
-      sessionTarget: task.run.targetLayer === "worker" ? "worker" : "main",
-      recoveryContext: {
-        parentGroupId: task.run.sourceGroupId,
-        action: task.nextAction,
-        dispatchReplayId: task.dispatchReplayId,
-        recoveryRunId: task.run.recoveryRunId,
-        attemptId: task.attemptId,
-      },
       dispatch: {
         targetRoleId: task.run.roleId,
         ...(task.run.targetLayer === "worker" && task.run.targetWorker ? { targetWorker: task.run.targetWorker } : {}),
@@ -446,7 +437,7 @@ export function createRecoveryActionService(input: {
       },
       createdAt: task.now,
       updatedAt: task.now,
-    };
+    });
   }
 
   function buildRecoveryInstructions(run: RecoveryRun, nextAction: ReplayRecoveryPlan["nextAction"]): string {

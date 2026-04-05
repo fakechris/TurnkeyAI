@@ -504,6 +504,89 @@ export interface RelayPayload {
   dispatchPolicy?: DispatchPolicy;
 }
 
+export function normalizeRelayPayload(payload: RelayPayload): RelayPayload {
+  const relayBrief = payload.intent?.relayBrief ?? payload.relayBrief ?? "";
+  const recentMessages = payload.intent?.recentMessages ?? payload.recentMessages ?? [];
+  const instructions = payload.intent?.instructions ?? payload.instructions;
+  const preferredWorkerKinds = payload.constraints?.preferredWorkerKinds ?? payload.preferredWorkerKinds ?? [];
+  const dispatchPolicy = payload.constraints?.dispatchPolicy ?? payload.dispatchPolicy;
+  const continuity =
+    payload.continuity ??
+    (payload.continuationContext
+      ? {
+          context: payload.continuationContext,
+        }
+      : undefined);
+  const coordination =
+    payload.coordination ??
+    (payload.mergeContext || payload.parallelContext
+      ? {
+          ...(payload.mergeContext ? { merge: payload.mergeContext } : {}),
+          ...(payload.parallelContext ? { parallel: payload.parallelContext } : {}),
+        }
+      : undefined);
+
+  return {
+    threadId: payload.threadId,
+    intent: {
+      relayBrief,
+      recentMessages,
+      ...(instructions ? { instructions } : {}),
+    },
+    ...(continuity ? { continuity } : {}),
+    ...(coordination ? { coordination } : {}),
+    ...(dispatchPolicy
+      ? {
+          constraints: {
+            dispatchPolicy,
+            ...(preferredWorkerKinds.length > 0 ? { preferredWorkerKinds } : {}),
+          },
+        }
+      : preferredWorkerKinds.length > 0
+        ? {
+            preferredWorkerKinds,
+          }
+        : {}),
+    relayBrief,
+    recentMessages,
+    ...(instructions ? { instructions } : {}),
+    ...(preferredWorkerKinds.length > 0 ? { preferredWorkerKinds } : {}),
+    ...(payload.sessionTarget ? { sessionTarget: payload.sessionTarget } : {}),
+    ...(continuity?.context ? { continuationContext: continuity.context } : {}),
+    ...(coordination?.merge ? { mergeContext: coordination.merge } : {}),
+    ...(coordination?.parallel ? { parallelContext: coordination.parallel } : {}),
+    ...(dispatchPolicy ? { dispatchPolicy } : {}),
+  };
+}
+
+export function createRelayPayload(input: {
+  threadId: ThreadId;
+  relayBrief: string;
+  recentMessages: TeamMessageSummary[];
+  instructions?: string;
+  sessionTarget?: SessionTarget;
+  continuity?: DispatchContinuity;
+  preferredWorkerKinds?: WorkerKind[];
+  dispatchPolicy: DispatchPolicy;
+  coordination?: DispatchCoordination;
+}): RelayPayload {
+  return normalizeRelayPayload({
+    threadId: input.threadId,
+    intent: {
+      relayBrief: input.relayBrief,
+      recentMessages: input.recentMessages,
+      ...(input.instructions ? { instructions: input.instructions } : {}),
+    },
+    ...(input.continuity ? { continuity: input.continuity } : {}),
+    ...(input.coordination ? { coordination: input.coordination } : {}),
+    ...(input.sessionTarget ? { sessionTarget: input.sessionTarget } : {}),
+    constraints: {
+      dispatchPolicy: input.dispatchPolicy,
+      ...(input.preferredWorkerKinds?.length ? { preferredWorkerKinds: input.preferredWorkerKinds } : {}),
+    },
+  });
+}
+
 export interface FanOutMergeContext {
   fanOutGroupId: string;
   expectedRoleIds: RoleId[];

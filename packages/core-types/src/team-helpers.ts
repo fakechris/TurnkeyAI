@@ -32,3 +32,27 @@ export function getScheduledPreferredWorkerKinds(task: ScheduledTaskRecord): Wor
   }
   return task.dispatch?.targetWorker ? [task.dispatch.targetWorker] : task.targetWorker ? [task.targetWorker] : [];
 }
+
+export function normalizeScheduledTaskRecord(task: ScheduledTaskRecord): ScheduledTaskRecord {
+  const targetRoleId = getScheduledTargetRoleId(task);
+  const targetWorker = getScheduledTargetWorker(task);
+  const sessionTarget = getScheduledSessionTarget(task);
+  const continuity = getScheduledContinuity(task);
+  const preferredWorkerKinds = getScheduledPreferredWorkerKinds(task);
+  const recoveryContext = continuity?.context?.recovery;
+
+  return {
+    ...task,
+    dispatch: {
+      targetRoleId,
+      sessionTarget,
+      ...(targetWorker ? { targetWorker } : {}),
+      ...(continuity ? { continuity } : {}),
+      ...(preferredWorkerKinds.length > 0 ? { constraints: { preferredWorkerKinds } } : {}),
+    },
+    targetRoleId,
+    ...(targetWorker ? { targetWorker } : {}),
+    sessionTarget,
+    ...(recoveryContext ? { recoveryContext } : {}),
+  };
+}
