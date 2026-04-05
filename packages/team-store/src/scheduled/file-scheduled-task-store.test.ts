@@ -149,3 +149,45 @@ test("file scheduled task store rejects stale expected versions", async () => {
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("file scheduled task store can update a legacy task without deadlocking", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "turnkeyai-scheduled-task-store-update-legacy-"));
+
+  try {
+    const filePath = path.join(rootDir, `${encodeURIComponent("TASK-update-legacy")}.json`);
+    await writeJsonFileAtomic(filePath, {
+      taskId: "TASK-update-legacy",
+      threadId: "thread-legacy",
+      targetRoleId: "role-operator",
+      sessionTarget: "main",
+      schedule: {
+        kind: "cron",
+        expr: "0 9 * * *",
+        tz: "Asia/Shanghai",
+        nextRunAt: 1,
+      },
+      capsule: {
+        title: "Legacy task",
+        instructions: "Inspect queue.",
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const store = new FileScheduledTaskStore({ rootDir });
+    const current = await store.get("TASK-update-legacy");
+    await store.put(
+      {
+        ...current!,
+        updatedAt: 2,
+      },
+      { expectedVersion: current?.version }
+    );
+
+    const updated = await store.get("TASK-update-legacy");
+    assert.equal(updated?.version, 2);
+    assert.equal(updated?.dispatch?.targetRoleId, "role-operator");
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});

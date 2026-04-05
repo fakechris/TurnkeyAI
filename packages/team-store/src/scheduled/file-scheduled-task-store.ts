@@ -22,7 +22,8 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
 
   async put(task: ScheduledTaskRecord, options?: { expectedVersion?: number | undefined }): Promise<void> {
     await this.withTaskLock(task.taskId, async () => {
-      const current = await this.get(task.taskId);
+      const raw = await readJsonFile<ScheduledTaskRecord>(this.filePath(task.taskId));
+      const current = raw ? normalizeScheduledTaskRecord(raw) : null;
       const existingVersion = current?.version ?? 0;
       if (options?.expectedVersion != null && existingVersion !== options.expectedVersion) {
         throw new Error(
@@ -57,7 +58,8 @@ export class FileScheduledTaskStore implements ScheduledTaskStore {
     options?: { expectedVersion?: number | undefined }
   ): Promise<ScheduledTaskRecord | null> {
     return this.withTaskLock(taskId, async () => {
-      const current = await this.get(taskId);
+      const raw = await readJsonFile<ScheduledTaskRecord>(this.filePath(taskId));
+      const current = raw ? normalizeScheduledTaskRecord(raw) : null;
       if (
         !current ||
         current.updatedAt !== expectedUpdatedAt ||

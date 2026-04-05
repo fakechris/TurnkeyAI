@@ -29,12 +29,7 @@ import { FileBrowserSessionStore } from "../session/file-browser-session-store";
 import { FileBrowserTargetStore } from "../session/file-browser-target-store";
 import { RelayGateway, isRelayExecutableAction } from "./relay-gateway";
 import type { RelayActionRequest, RelayActionResult } from "./relay-protocol";
-import type {
-  BrowserTransportAdapter,
-  BrowserTransportFactoryOptions,
-  RelayControlPlane,
-  RelayTransportOptions,
-} from "./transport-adapter";
+import type { BrowserTransportAdapter, BrowserTransportFactoryOptions, RelayControlPlane, RelayTransportOptions } from "./transport-adapter";
 
 export class RelayBrowserAdapter implements BrowserTransportAdapter {
   readonly transportMode = "relay" as const;
@@ -91,10 +86,6 @@ export class RelayBrowserAdapter implements BrowserTransportAdapter {
   }
 
   getRelayControlPlane(): RelayControlPlane {
-    return this.gateway;
-  }
-
-  getRelayGateway(): RelayGateway {
     return this.gateway;
   }
 
@@ -642,8 +633,4 @@ function summarizeBrowserHistorySuccess(
 
 function summarizeBrowserHistoryFailure(dispatchMode: BrowserSessionDispatchMode, error: unknown): string {
   return `Browser ${dispatchMode} failed: ${error instanceof Error ? error.message : "browser execution failed"}.`;
-}
-
-export function maybeGetRelayGateway(adapter: BrowserTransportAdapter): RelayGateway | null {
-  return adapter instanceof RelayBrowserAdapter ? adapter.getRelayGateway() : null;
 }
