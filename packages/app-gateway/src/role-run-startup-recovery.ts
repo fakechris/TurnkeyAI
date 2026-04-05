@@ -32,7 +32,7 @@ export async function recoverRoleRunsOnStartup(input: {
       ...run,
       status: "failed",
       workerSessions: {},
-    });
+    }, { expectedVersion: run.version });
     failedRunKeys.push(run.runKey);
   }
 
@@ -68,7 +68,7 @@ export async function recoverRoleRunsOnStartup(input: {
       mutated = true;
     }
     if (mutated) {
-      await input.roleRunStore.put(nextRun);
+      await input.roleRunStore.put(nextRun, { expectedVersion: run.version });
     }
     reconciledRuns.push(nextRun);
   }

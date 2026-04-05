@@ -24,11 +24,16 @@ export class FileRoleRunStore implements RoleRunStore {
     });
   }
 
-  async put(runState: RoleRunState): Promise<void> {
+  async put(runState: RoleRunState, options?: { expectedVersion?: number | undefined }): Promise<void> {
     await this.runMutex.run(runState.runKey, async () => {
       const filePath = this.filePath(runState.runKey);
       const existing = await readJsonFile<RoleRunState>(filePath);
       const existingVersion = existing?.version ?? 0;
+      if (options?.expectedVersion != null && existingVersion !== options.expectedVersion) {
+        throw new Error(
+          `role run version conflict for ${runState.runKey}: expected ${options.expectedVersion}, found ${existingVersion}`
+        );
+      }
       await writeJsonFileAtomic(filePath, normalizeRoleRunStateVersion({
         ...runState,
         version: existingVersion + 1,

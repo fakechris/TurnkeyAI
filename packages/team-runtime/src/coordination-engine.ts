@@ -1043,7 +1043,7 @@ export class CoordinationEngine {
   }
 
   private async putFlow(flow: FlowLedger): Promise<void> {
-    await this.deps.flowLedgerStore.put(flow);
+    await this.deps.flowLedgerStore.put(flow, flow.version != null ? { expectedVersion: flow.version } : undefined);
     await this.recordRuntimeChainBestEffort("syncFlowStatus", flow, () => this.deps.runtimeChainRecorder?.syncFlowStatus(flow));
   }
 

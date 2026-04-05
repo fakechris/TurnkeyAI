@@ -89,7 +89,7 @@ export class DefaultRoleRunCoordinator implements RoleRunCoordinator {
         ...current,
         inbox: rest,
         lastActiveAt: this.now(),
-      });
+      }, { expectedVersion: current.version });
 
       return next;
     });
@@ -187,7 +187,7 @@ export class DefaultRoleRunCoordinator implements RoleRunCoordinator {
     return this.withRunLock(runKey, async () => {
       const current = await this.requireRun(runKey);
       const next = mutate(current);
-      await this.roleRunStore.put(next);
+      await this.roleRunStore.put(next, { expectedVersion: current.version });
       return next;
     });
   }

@@ -62,3 +62,42 @@ test("file role run store backfills version for legacy records", async () => {
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("file role run store rejects stale expected versions", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "turnkeyai-role-run-conflict-"));
+  try {
+    const store = new FileRoleRunStore({ rootDir });
+    await store.put({
+      runKey: "role:lead:thread:thread-1",
+      threadId: "thread-1",
+      roleId: "lead",
+      mode: "group",
+      status: "queued",
+      iterationCount: 0,
+      maxIterations: 5,
+      inbox: [],
+      lastActiveAt: 10,
+    });
+
+    await assert.rejects(
+      () =>
+        store.put(
+          {
+            runKey: "role:lead:thread:thread-1",
+            threadId: "thread-1",
+            roleId: "lead",
+            mode: "group",
+            status: "running",
+            iterationCount: 0,
+            maxIterations: 5,
+            inbox: [],
+            lastActiveAt: 20,
+          },
+          { expectedVersion: 0 }
+        ),
+      /role run version conflict/
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});

@@ -24,11 +24,16 @@ export class FileFlowLedgerStore implements FlowLedgerStore {
     });
   }
 
-  async put(flow: FlowLedger): Promise<void> {
+  async put(flow: FlowLedger, options?: { expectedVersion?: number | undefined }): Promise<void> {
     await this.flowMutex.run(flow.flowId, async () => {
       const filePath = this.filePath(flow.flowId);
       const existing = await readJsonFile<FlowLedger>(filePath);
       const existingVersion = existing?.version ?? 0;
+      if (options?.expectedVersion != null && existingVersion !== options.expectedVersion) {
+        throw new Error(
+          `flow version conflict for ${flow.flowId}: expected ${options.expectedVersion}, found ${existingVersion}`
+        );
+      }
       await writeJsonFileAtomic(filePath, normalizeFlowLedgerVersion({
         ...flow,
         version: existingVersion + 1,

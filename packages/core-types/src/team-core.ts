@@ -523,7 +523,7 @@ export interface TeamMessageStore {
 
 export interface RoleRunStore {
   get(runKey: RunKey): Promise<RoleRunState | null>;
-  put(runState: RoleRunState): Promise<void>;
+  put(runState: RoleRunState, options?: { expectedVersion?: number | undefined }): Promise<void>;
   delete(runKey: RunKey): Promise<void>;
   listByThread(threadId: ThreadId): Promise<RoleRunState[]>;
   listAll?(): Promise<RoleRunState[]>;
@@ -531,7 +531,7 @@ export interface RoleRunStore {
 
 export interface FlowLedgerStore {
   get(flowId: FlowId): Promise<FlowLedger | null>;
-  put(flow: FlowLedger): Promise<void>;
+  put(flow: FlowLedger, options?: { expectedVersion?: number | undefined }): Promise<void>;
   listByThread(threadId: ThreadId): Promise<FlowLedger[]>;
   listAll?(): Promise<FlowLedger[]>;
 }

@@ -74,3 +74,52 @@ test("file flow ledger store backfills version for legacy records", async () => 
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("file flow ledger store rejects stale expected versions", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "turnkeyai-flow-ledger-conflict-"));
+  try {
+    const store = new FileFlowLedgerStore({ rootDir });
+    await store.put({
+      flowId: "flow-1",
+      threadId: "thread-1",
+      rootMessageId: "message-1",
+      mode: "serial",
+      status: "running",
+      currentStageIndex: 0,
+      activeRoleIds: ["lead"],
+      completedRoleIds: [],
+      failedRoleIds: [],
+      hopCount: 0,
+      maxHops: 5,
+      edges: [],
+      createdAt: 10,
+      updatedAt: 10,
+    });
+
+    await assert.rejects(
+      () =>
+        store.put(
+          {
+            flowId: "flow-1",
+            threadId: "thread-1",
+            rootMessageId: "message-1",
+            mode: "serial",
+            status: "completed",
+            currentStageIndex: 0,
+            activeRoleIds: [],
+            completedRoleIds: ["lead"],
+            failedRoleIds: [],
+            hopCount: 0,
+            maxHops: 5,
+            edges: [],
+            createdAt: 10,
+            updatedAt: 20,
+          },
+          { expectedVersion: 0 }
+        ),
+      /flow version conflict/
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});

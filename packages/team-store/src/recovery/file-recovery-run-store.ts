@@ -22,14 +22,20 @@ export class FileRecoveryRunStore implements RecoveryRunStore {
     });
   }
 
-  async put(run: RecoveryRun): Promise<void> {
+  async put(run: RecoveryRun, options?: { expectedVersion?: number | undefined }): Promise<void> {
     await this.runMutex.run(run.recoveryRunId, async () => {
       const byIdPath = this.byIdFilePath(run.recoveryRunId);
       const threadPath = this.threadFilePath(run.threadId, run.recoveryRunId);
       const existing = await this.readRecoveryRun(run.recoveryRunId);
+      const existingVersion = existing?.version ?? 0;
+      if (options?.expectedVersion != null && existingVersion !== options.expectedVersion) {
+        throw new Error(
+          `recovery run version conflict for ${run.recoveryRunId}: expected ${options.expectedVersion}, found ${existingVersion}`
+        );
+      }
       const storedRun = stripAttempts({
         ...run,
-        version: (existing?.version ?? 0) + 1,
+        version: existingVersion + 1,
       });
       await writeJsonFileAtomic(byIdPath, storedRun);
       try {

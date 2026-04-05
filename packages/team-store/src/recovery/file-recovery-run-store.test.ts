@@ -216,3 +216,51 @@ test("file recovery run store increments projection versions on overwrite", asyn
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("file recovery run store rejects stale expected versions", async () => {
+  const rootDir = await mkdtemp(path.join(os.tmpdir(), "runtime-recovery-run-conflict-store-"));
+  try {
+    const store = new FileRecoveryRunStore({
+      rootDir,
+    });
+
+    await store.put({
+      recoveryRunId: "recovery:task-1",
+      threadId: "thread-1",
+      sourceGroupId: "task-1",
+      latestStatus: "failed",
+      status: "waiting_approval",
+      nextAction: "request_approval",
+      autoDispatchReady: false,
+      requiresManualIntervention: true,
+      latestSummary: "approval required",
+      attempts: [],
+      createdAt: 10,
+      updatedAt: 20,
+    });
+
+    await assert.rejects(
+      () =>
+        store.put(
+          {
+            recoveryRunId: "recovery:task-1",
+            threadId: "thread-1",
+            sourceGroupId: "task-1",
+            latestStatus: "partial",
+            status: "resumed",
+            nextAction: "auto_resume",
+            autoDispatchReady: true,
+            requiresManualIntervention: false,
+            latestSummary: "resuming",
+            attempts: [],
+            createdAt: 10,
+            updatedAt: 30,
+          },
+          { expectedVersion: 0 }
+        ),
+      /recovery run version conflict/
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
