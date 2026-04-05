@@ -166,3 +166,36 @@ test("browser routes reject blank activate and close target ids", async () => {
   assert.equal(close.res.statusCode, 400);
   assert.deepEqual(close.json, { error: "targetId is required" });
 });
+
+test("browser routes trim activate target ids and reject invalid evict-idle values", async () => {
+  const activate = createResponse();
+  await handleBrowserRoutes({
+    req: createRequest({
+      method: "POST",
+      url: "/browser-sessions/session-1/activate-target",
+      body: { threadId: "thread-1", targetId: " target-1 " },
+    }),
+    res: activate.res,
+    url: new URL("http://127.0.0.1/browser-sessions/session-1/activate-target"),
+    deps: createDeps(),
+  });
+  assert.equal(activate.res.statusCode, 200);
+  assert.deepEqual(activate.json, {
+    browserSessionId: "session-1",
+    targetId: "target-1",
+  });
+
+  const invalidEvict = createResponse();
+  await handleBrowserRoutes({
+    req: createRequest({
+      method: "POST",
+      url: "/browser-sessions/evict-idle",
+      body: { idleMs: 0 },
+    }),
+    res: invalidEvict.res,
+    url: new URL("http://127.0.0.1/browser-sessions/evict-idle"),
+    deps: createDeps(),
+  });
+  assert.equal(invalidEvict.res.statusCode, 400);
+  assert.deepEqual(invalidEvict.json, { error: "idleMs must be a positive number" });
+});

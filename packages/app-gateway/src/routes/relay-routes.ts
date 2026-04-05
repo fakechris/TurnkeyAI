@@ -43,7 +43,14 @@ export async function handleRelayRoutes(input: {
       relayGateway.registerPeer({
         peerId: body.peerId,
         ...(body.label?.trim() ? { label: body.label.trim() } : {}),
-        ...(Array.isArray(body.capabilities) ? { capabilities: body.capabilities } : {}),
+        ...(Array.isArray(body.capabilities)
+          ? {
+              capabilities: body.capabilities
+                .filter((capability): capability is string => typeof capability === "string")
+                .map((capability) => capability.trim())
+                .filter((capability) => capability.length > 0),
+            }
+          : {}),
         ...(body.transportLabel?.trim() ? { transportLabel: body.transportLabel.trim() } : {}),
       })
     );
@@ -78,14 +85,26 @@ export async function handleRelayRoutes(input: {
       sendJson(res, 400, { error: "targets array is required" });
       return true;
     }
+    const targets = body.targets
+      .filter((target): target is NonNullable<typeof target> => Boolean(target) && typeof target === "object")
+      .map((target) => ({
+        relayTargetId: target.relayTargetId?.trim() ?? "",
+        url: target.url?.trim() ?? "",
+        title: target.title?.trim(),
+        status: target.status,
+      }));
+    if (targets.length !== body.targets.length || targets.some((target) => target.relayTargetId.length === 0)) {
+      sendJson(res, 400, { error: "each target must include a non-empty relayTargetId" });
+      return true;
+    }
     sendJson(
       res,
       200,
       relayGateway.reportTargets(
         decodeURIComponent(relayPeerTargetsMatch[1]!),
-        body.targets.map((target) => ({
-          relayTargetId: target.relayTargetId?.trim() ?? "",
-          url: target.url ?? "",
+        targets.map((target) => ({
+          relayTargetId: target.relayTargetId,
+          url: target.url,
           ...(target.title ? { title: target.title } : {}),
           ...(target.status ? { status: target.status } : {}),
         }))
@@ -172,11 +191,16 @@ export async function handleRelayRoutes(input: {
         taskId: body.taskId.trim(),
         relayTargetId: body.relayTargetId.trim(),
         url: body.url.trim(),
-        ...(body.title ? { title: body.title } : {}),
+        ...(body.title?.trim() ? { title: body.title.trim() } : {}),
         status: body.status,
         ...(body.page ? { page: body.page } : {}),
         trace: Array.isArray(body.trace) ? body.trace : [],
-        screenshotPaths: Array.isArray(body.screenshotPaths) ? body.screenshotPaths : [],
+        screenshotPaths: Array.isArray(body.screenshotPaths)
+          ? body.screenshotPaths
+              .filter((path): path is string => typeof path === "string")
+              .map((path) => path.trim())
+              .filter((path) => path.length > 0)
+          : [],
         screenshotPayloads: Array.isArray(body.screenshotPayloads)
           ? body.screenshotPayloads
               .filter(
@@ -187,13 +211,18 @@ export async function handleRelayRoutes(input: {
                   typeof payload.dataBase64 === "string"
               )
               .map((payload) => ({
-                ...(payload.label ? { label: payload.label } : {}),
-                mimeType: payload.mimeType,
+                ...(payload.label?.trim() ? { label: payload.label.trim() } : {}),
+                mimeType: payload.mimeType.trim(),
                 dataBase64: payload.dataBase64,
               }))
           : [],
-        artifactIds: Array.isArray(body.artifactIds) ? body.artifactIds : [],
-        ...(body.errorMessage ? { errorMessage: body.errorMessage } : {}),
+        artifactIds: Array.isArray(body.artifactIds)
+          ? body.artifactIds
+              .filter((artifactId): artifactId is string => typeof artifactId === "string")
+              .map((artifactId) => artifactId.trim())
+              .filter((artifactId) => artifactId.length > 0)
+          : [],
+        ...(body.errorMessage?.trim() ? { errorMessage: body.errorMessage.trim() } : {}),
       })
     );
     return true;

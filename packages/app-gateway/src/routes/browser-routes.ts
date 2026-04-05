@@ -327,6 +327,14 @@ export async function handleBrowserRoutes(input: {
 
   if (req.method === "POST" && url.pathname === "/browser-sessions/evict-idle") {
     const body = await readOptionalJsonBody<{ idleMs?: number; idleBefore?: number; reason?: string }>(req);
+    if (body.idleMs !== undefined && (!Number.isFinite(body.idleMs) || body.idleMs <= 0)) {
+      sendJson(res, 400, { error: "idleMs must be a positive number" });
+      return true;
+    }
+    if (body.idleBefore !== undefined && (!Number.isFinite(body.idleBefore) || body.idleBefore <= 0)) {
+      sendJson(res, 400, { error: "idleBefore must be a positive number" });
+      return true;
+    }
     const idleBefore = body.idleBefore ?? deps.clock.now() - (body.idleMs ?? 30 * 60 * 1000);
     sendJson(
       res,

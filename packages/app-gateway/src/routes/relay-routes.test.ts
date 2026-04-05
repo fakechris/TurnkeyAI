@@ -137,11 +137,71 @@ test("relay routes trim optional peer ids and action result fields", async () =>
     taskId: "task-1",
     relayTargetId: "target-1",
     url: "https://example.com",
-    title: " Example ",
+    title: "Example",
     status: "completed",
     trace: [],
     screenshotPaths: [],
     screenshotPayloads: [],
     artifactIds: [],
+  });
+});
+
+test("relay routes reject malformed target reports and trim nested action result fields", async () => {
+  const badTargets = createResponse();
+  await handleRelayRoutes({
+    req: createRequest({
+      method: "POST",
+      url: "/relay/peers/peer-1/targets/report",
+      body: {
+        targets: [{ relayTargetId: "   ", url: "https://example.com" }],
+      },
+    }),
+    res: badTargets.res,
+    url: new URL("http://127.0.0.1/relay/peers/peer-1/targets/report"),
+    relayGateway: createRelayGateway(),
+  });
+  assert.equal(badTargets.res.statusCode, 400);
+  assert.deepEqual(badTargets.json, {
+    error: "each target must include a non-empty relayTargetId",
+  });
+
+  const submit = createResponse();
+  await handleRelayRoutes({
+    req: createRequest({
+      method: "POST",
+      url: "/relay/peers/peer-1/action-results",
+      body: {
+        actionRequestId: " request-2 ",
+        browserSessionId: " session-2 ",
+        taskId: " task-2 ",
+        relayTargetId: " target-2 ",
+        url: " https://example.com/next ",
+        title: " Follow-up ",
+        status: "failed",
+        screenshotPaths: [" shot-1.png ", " "],
+        artifactIds: [" artifact-1 ", " "],
+        screenshotPayloads: [{ label: " before ", mimeType: " image/png ", dataBase64: "abc123" }],
+        errorMessage: " timed out ",
+      },
+    }),
+    res: submit.res,
+    url: new URL("http://127.0.0.1/relay/peers/peer-1/action-results"),
+    relayGateway: createRelayGateway(),
+  });
+  assert.equal(submit.res.statusCode, 200);
+  assert.deepEqual(submit.json, {
+    actionRequestId: "request-2",
+    peerId: "peer-1",
+    browserSessionId: "session-2",
+    taskId: "task-2",
+    relayTargetId: "target-2",
+    url: "https://example.com/next",
+    title: "Follow-up",
+    status: "failed",
+    trace: [],
+    screenshotPaths: ["shot-1.png"],
+    screenshotPayloads: [{ label: "before", mimeType: "image/png", dataBase64: "abc123" }],
+    artifactIds: ["artifact-1"],
+    errorMessage: "timed out",
   });
 });
