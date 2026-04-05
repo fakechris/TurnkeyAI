@@ -546,6 +546,7 @@ export interface OperatorSummaryReport {
   workerStartupReconcile?: RuntimeSummaryReport["workerStartupReconcile"];
   workerSessionHealth?: RuntimeSummaryReport["workerSessionHealth"];
   workerBindingReconcile?: RuntimeSummaryReport["workerBindingReconcile"];
+  roleRunStartupRecovery?: RuntimeSummaryReport["roleRunStartupRecovery"];
   promptAttentionCount: number;
   totalAttentionCount: number;
   attentionOverview?: {

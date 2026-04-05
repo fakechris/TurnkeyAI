@@ -1429,6 +1429,13 @@ test("operator triage surfaces worker session drift when runtime summary reports
         roleRunsRequeued: 0,
         roleRunsFailed: 1,
       },
+      roleRunStartupRecovery: {
+        totalRoleRuns: 3,
+        restartedQueuedRuns: 1,
+        restartedRunningRuns: 1,
+        restartedResumingRuns: 0,
+        restartedRunKeys: ["run:queued", "run:running"],
+      },
     },
     limit: 10,
   });
@@ -1476,6 +1483,13 @@ test("operator triage surfaces worker session drift when runtime summary reports
         roleRunsRequeued: 0,
         roleRunsFailed: 1,
       },
+      roleRunStartupRecovery: {
+        totalRoleRuns: 3,
+        restartedQueuedRuns: 1,
+        restartedRunningRuns: 1,
+        restartedResumingRuns: 0,
+        restartedRunKeys: ["run:queued", "run:running"],
+      },
     },
     limit: 5,
   });
@@ -1487,6 +1501,8 @@ test("operator triage surfaces worker session drift when runtime summary reports
   assert.equal(driftFocus?.commandHint, "runtime-summary 10");
   const bindingFocus = report.focusAreas.find((area) => area.label === "worker-binding-reconcile");
   assert.equal(bindingFocus?.state, "worker_binding_reconcile");
+  const startupRecoveryFocus = report.focusAreas.find((area) => area.label === "role-run-startup-recovery");
+  assert.equal(startupRecoveryFocus?.state, "role_run_startup_recovery");
 });
 
 function buildPromptBoundary(input: {

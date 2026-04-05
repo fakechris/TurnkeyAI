@@ -580,6 +580,14 @@ export interface WorkerBindingStartupReconcileResult {
   roleRunsFailed: number;
 }
 
+export interface RoleRunStartupRecoveryResult {
+  totalRoleRuns: number;
+  restartedQueuedRuns: number;
+  restartedRunningRuns: number;
+  restartedResumingRuns: number;
+  restartedRunKeys: RunKey[];
+}
+
 export interface SupervisorUserMessageInput {
   thread: TeamThread;
   flow: FlowLedger;

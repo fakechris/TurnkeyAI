@@ -78,6 +78,15 @@ export function createRuntimeQueryService(input: {
         roleRunsFailed: number;
       }
     | undefined;
+  getRoleRunStartupRecoveryResult?: () =>
+    | {
+        totalRoleRuns: number;
+        restartedQueuedRuns: number;
+        restartedRunningRuns: number;
+        restartedResumingRuns: number;
+        restartedRunKeys: string[];
+      }
+    | undefined;
   teamThreadStore: FileTeamThreadStore;
   flowLedgerStore: FileFlowLedgerStore;
   roleRunStore: FileRoleRunStore;
@@ -95,6 +104,7 @@ export function createRuntimeQueryService(input: {
     workerRuntime,
     getWorkerStartupReconcileResult,
     getWorkerBindingReconcileResult,
+    getRoleRunStartupRecoveryResult,
     teamThreadStore,
     flowLedgerStore,
     roleRunStore,
@@ -303,25 +313,34 @@ export function createRuntimeQueryService(input: {
       });
       const workerStartupReconcile = getWorkerStartupReconcileResult?.();
       const workerBindingReconcile = getWorkerBindingReconcileResult?.();
+      const roleRunStartupRecovery = getRoleRunStartupRecoveryResult?.();
       return workerStartupReconcile
         ? {
             ...report,
             workerStartupReconcile,
             ...(workerSessionHealth ? { workerSessionHealth } : {}),
             ...(workerBindingReconcile ? { workerBindingReconcile } : {}),
+            ...(roleRunStartupRecovery ? { roleRunStartupRecovery } : {}),
           }
         : workerSessionHealth
           ? {
               ...report,
               workerSessionHealth,
               ...(workerBindingReconcile ? { workerBindingReconcile } : {}),
+              ...(roleRunStartupRecovery ? { roleRunStartupRecovery } : {}),
             }
           : workerBindingReconcile
             ? {
                 ...report,
                 workerBindingReconcile,
+                ...(roleRunStartupRecovery ? { roleRunStartupRecovery } : {}),
               }
-            : report;
+            : roleRunStartupRecovery
+              ? {
+                  ...report,
+                  roleRunStartupRecovery,
+                }
+              : report;
     },
 
     async listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]> {

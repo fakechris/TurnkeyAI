@@ -991,6 +991,11 @@ function printRuntimeSummary(report: RuntimeSummaryReport): void {
       `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention} requeued=${report.workerBindingReconcile.roleRunsRequeued} failed=${report.workerBindingReconcile.roleRunsFailed}`
     );
   }
+  if (report.roleRunStartupRecovery) {
+    console.log(
+      `  role run startup recovery: total=${report.roleRunStartupRecovery.totalRoleRuns} restarted-queued=${report.roleRunStartupRecovery.restartedQueuedRuns} restarted-running=${report.roleRunStartupRecovery.restartedRunningRuns} restarted-resuming=${report.roleRunStartupRecovery.restartedResumingRuns}`
+    );
+  }
   printRuntimeSummaryEntries("  attention chains:", report.attentionChains);
   printRuntimeSummaryEntries("  active chains:", report.activeChains);
   printRuntimeSummaryEntries("  waiting chains:", report.waitingChains);
@@ -1401,6 +1406,11 @@ function printOperatorSummary(report: OperatorSummaryReport): void {
   if (report.workerBindingReconcile) {
     console.log(
       `  worker binding reconcile: role-runs=${report.workerBindingReconcile.totalRoleRuns} bindings=${report.workerBindingReconcile.totalBindings} cleared-missing=${report.workerBindingReconcile.clearedMissingBindings} cleared-terminal=${report.workerBindingReconcile.clearedTerminalBindings} cleared-cross-thread=${report.workerBindingReconcile.clearedCrossThreadBindings} attention=${report.workerBindingReconcile.roleRunsNeedingAttention} requeued=${report.workerBindingReconcile.roleRunsRequeued} failed=${report.workerBindingReconcile.roleRunsFailed}`
+    );
+  }
+  if (report.roleRunStartupRecovery) {
+    console.log(
+      `  role run startup recovery: total=${report.roleRunStartupRecovery.totalRoleRuns} restarted-queued=${report.roleRunStartupRecovery.restartedQueuedRuns} restarted-running=${report.roleRunStartupRecovery.restartedRunningRuns} restarted-resuming=${report.roleRunStartupRecovery.restartedResumingRuns}`
     );
   }
   console.log(

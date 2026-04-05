@@ -486,3 +486,119 @@ test("runtime query service attaches worker binding reconcile summary when avail
     roleRunsFailed: 1,
   });
 });
+
+test("runtime query service attaches role run startup recovery summary when available", async () => {
+  const service = createRuntimeQueryService({
+    clock: { now: () => 1000 },
+    workerRuntime: {
+      async spawn() {
+        return null;
+      },
+      async send() {
+        return null;
+      },
+      async resume() {
+        return null;
+      },
+      async interrupt() {
+        return null;
+      },
+      async cancel() {
+        return null;
+      },
+      async getState() {
+        return null;
+      },
+      async maybeRunForRole() {
+        return null;
+      },
+    },
+    getRoleRunStartupRecoveryResult: () => ({
+      totalRoleRuns: 5,
+      restartedQueuedRuns: 2,
+      restartedRunningRuns: 1,
+      restartedResumingRuns: 1,
+      restartedRunKeys: ["run:q1", "run:q2", "run:r1", "run:resume1"],
+    }),
+    teamThreadStore: {
+      async list() {
+        return [];
+      },
+    } as any,
+    flowLedgerStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    roleRunStore: {
+      async listByThread() {
+        return [];
+      },
+    } as any,
+    runtimeChainStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    runtimeChainStatusStore: {
+      async listByThread() {
+        return [];
+      },
+      async get() {
+        return null;
+      },
+    } as any,
+    runtimeChainSpanStore: {
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    runtimeChainEventStore: {
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    runtimeProgressStore: {
+      async listByThread() {
+        return [];
+      },
+      async listByChain() {
+        return [];
+      },
+    } as any,
+    recoveryRunStore: {
+      async get() {
+        return null;
+      },
+      async listByThread() {
+        return [];
+      },
+    } as any,
+    recoveryRunEventStore: {
+      async listByRecoveryRun() {
+        return [];
+      },
+    } as any,
+    loadRecoveryRuntime: async () => ({
+      records: [],
+      report: {} as never,
+      runs: [],
+    }),
+  });
+
+  const report = await service.loadRuntimeSummary(null, 10);
+
+  assert.deepEqual(report.roleRunStartupRecovery, {
+    totalRoleRuns: 5,
+    restartedQueuedRuns: 2,
+    restartedRunningRuns: 1,
+    restartedResumingRuns: 1,
+    restartedRunKeys: ["run:q1", "run:q2", "run:r1", "run:resume1"],
+  });
+});

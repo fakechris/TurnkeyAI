@@ -293,6 +293,13 @@ export interface RuntimeSummaryReport {
     roleRunsRequeued: number;
     roleRunsFailed: number;
   };
+  roleRunStartupRecovery?: {
+    totalRoleRuns: number;
+    restartedQueuedRuns: number;
+    restartedRunningRuns: number;
+    restartedResumingRuns: number;
+    restartedRunKeys: RunKey[];
+  };
 }
 
 export interface RuntimeProgressEvent {

@@ -296,6 +296,9 @@ export function buildOperatorSummaryReport(input: {
     ...(input.runtimeSummary?.workerBindingReconcile
       ? { workerBindingReconcile: input.runtimeSummary.workerBindingReconcile }
       : {}),
+    ...(input.runtimeSummary?.roleRunStartupRecovery
+      ? { roleRunStartupRecovery: input.runtimeSummary.roleRunStartupRecovery }
+      : {}),
     promptAttentionCount,
     totalAttentionCount:
       flow.attentionCount + replay.attentionCount + governance.attentionCount + recovery.attentionCount + promptAttentionCount,
@@ -599,6 +602,25 @@ export function buildOperatorTriageReport(input: {
       nextStep: "inspect_runtime_worker_bindings",
       commandHint: "runtime-summary 10",
       state: "worker_binding_reconcile",
+    });
+  }
+  if (
+    (input.summary.roleRunStartupRecovery?.restartedQueuedRuns ?? 0) > 0 ||
+    (input.summary.roleRunStartupRecovery?.restartedRunningRuns ?? 0) > 0 ||
+    (input.summary.roleRunStartupRecovery?.restartedResumingRuns ?? 0) > 0
+  ) {
+    focusAreas.push({
+      area: "runtime",
+      label: "role-run-startup-recovery",
+      severity: "warning",
+      headline:
+        `role run startup recovery restarted=` +
+        `${(input.summary.roleRunStartupRecovery?.restartedQueuedRuns ?? 0) + (input.summary.roleRunStartupRecovery?.restartedRunningRuns ?? 0) + (input.summary.roleRunStartupRecovery?.restartedResumingRuns ?? 0)}`,
+      reason:
+        `Startup recovery restarted queued=${input.summary.roleRunStartupRecovery?.restartedQueuedRuns ?? 0}, running=${input.summary.roleRunStartupRecovery?.restartedRunningRuns ?? 0}, resuming=${input.summary.roleRunStartupRecovery?.restartedResumingRuns ?? 0} role runs.`,
+      nextStep: "inspect_runtime_role_runs",
+      commandHint: "runtime-summary 10",
+      state: "role_run_startup_recovery",
     });
   }
 
