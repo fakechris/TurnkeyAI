@@ -49,6 +49,8 @@ import { KeyedAsyncMutex } from "@turnkeyai/shared-utils/async-mutex";
 import { decodeBrowserSessionPayload } from "@turnkeyai/core-types/browser-session-payload";
 import { detectConflictRoleIds, detectDuplicateRoleIds } from "@turnkeyai/core-types/shard-result-analysis";
 import type { ContextStateMaintainer } from "./context-state-maintainer";
+import { FileBatchOutbox } from "./file-batch-outbox";
+import { OutboxBatchShipper } from "./outbox-batch-shipper";
 
 interface CoordinationEngineDeps {
   teamThreadStore: TeamThreadStore;
@@ -66,14 +68,66 @@ interface CoordinationEngineDeps {
   contextStateMaintainer?: ContextStateMaintainer;
   workerRuntime?: Pick<WorkerRuntime, "getState">;
   runtimeChainRecorder?: import("@turnkeyai/core-types/team").RuntimeChainRecorder;
+  dispatchOutboxRootDir?: string;
+  dispatchOutboxMaxRetries?: number;
+  dispatchOutboxRetryDelayMs?: number;
+  dispatchOutboxBackoffMultiplier?: number;
+  dispatchOutboxMaxRetryDelayMs?: number;
+}
+
+interface DispatchDeliveryIntent {
+  flowId: string;
+  edgeId: string;
+  handoff: HandoffEnvelope;
 }
 
 export class CoordinationEngine {
   private readonly deps: CoordinationEngineDeps;
   private readonly flowMutex = new KeyedAsyncMutex<string>();
+  private readonly dispatchDeliveryMutex = new KeyedAsyncMutex<string>();
+  private readonly dispatchOutboxShipper: OutboxBatchShipper<DispatchDeliveryIntent> | undefined;
 
   constructor(deps: CoordinationEngineDeps) {
     this.deps = deps;
+    this.dispatchOutboxShipper = deps.dispatchOutboxRootDir
+      ? new OutboxBatchShipper<DispatchDeliveryIntent>({
+          outbox: new FileBatchOutbox<DispatchDeliveryIntent>({
+            rootDir: deps.dispatchOutboxRootDir,
+            now: () => this.deps.clock.now(),
+          }),
+          sink: async (items) => {
+            for (const item of items) {
+              await this.deliverDispatchIntent(item);
+            }
+          },
+          ...(deps.dispatchOutboxMaxRetries != null ? { maxRetries: deps.dispatchOutboxMaxRetries } : {}),
+          ...(deps.dispatchOutboxRetryDelayMs != null ? { retryDelayMs: deps.dispatchOutboxRetryDelayMs } : {}),
+          ...(deps.dispatchOutboxBackoffMultiplier != null
+            ? { backoffMultiplier: deps.dispatchOutboxBackoffMultiplier }
+            : {}),
+          ...(deps.dispatchOutboxMaxRetryDelayMs != null
+            ? { maxRetryDelayMs: deps.dispatchOutboxMaxRetryDelayMs }
+            : {}),
+          onDroppedBatch: async (batch) => {
+            for (const item of batch.items) {
+              await this.abandonDispatchIntent(item);
+            }
+          },
+          onRetryScheduled: async (batch, attempt, delayMs, error) => {
+            for (const item of batch.items) {
+              console.warn("dispatch delivery retry scheduled", {
+                flowId: item.flowId,
+                edgeId: item.edgeId,
+                taskId: item.handoff.taskId,
+                attempt,
+                delayMs,
+                error,
+              });
+            }
+          },
+        })
+      : undefined;
+    this.dispatchOutboxShipper?.start();
   }
 
   async handleUserPost(input: SendTeamMessageInput): Promise<void> {
@@ -239,6 +293,15 @@ export class CoordinationEngine {
 
     const edgeId = await this.recordHandoff(flow.flowId, handoff);
     if (!edgeId) {
+      return;
+    }
+
+    if (this.dispatchOutboxShipper) {
+      await this.dispatchViaOutbox({
+        flowId: flow.flowId,
+        edgeId,
+        handoff,
+      });
       return;
     }
 
@@ -1042,6 +1105,72 @@ export class CoordinationEngine {
     });
   }
 
+  private async dispatchViaOutbox(intent: DispatchDeliveryIntent): Promise<void> {
+    let persisted = false;
+    try {
+      await this.dispatchOutboxShipper!.enqueue([intent]);
+      persisted = true;
+      await this.deliverDispatchIntent(intent);
+    } catch (error) {
+      if (!persisted) {
+        await this.markHandoffCancelled(intent.flowId, intent.edgeId);
+        await this.removeActiveRole(intent.flowId, intent.handoff.targetRoleId);
+      }
+      throw error;
+    }
+  }
+
+  private async deliverDispatchIntent(intent: DispatchDeliveryIntent): Promise<void> {
+    await this.dispatchDeliveryMutex.run(intent.edgeId, async () => {
+      const edge = await this.getEdge(intent.flowId, intent.edgeId);
+      if (!edge || ["cancelled", "timeout", "responded", "closed"].includes(edge.state)) {
+        return;
+      }
+
+      const runState = await this.deps.roleRunCoordinator.getOrCreate(
+        intent.handoff.threadId,
+        intent.handoff.targetRoleId
+      );
+      if (edge.state === "created" && !hasTrackedHandoff(runState, intent.handoff.taskId)) {
+        await this.deps.roleRunCoordinator.enqueue(runState.runKey, intent.handoff);
+      }
+      if (edge.state === "created") {
+        await this.markHandoffDelivered(intent.flowId, intent.edgeId);
+      }
+      await this.deps.roleLoopRunner.ensureRunning(runState.runKey);
+    });
+  }
+
+  private async abandonDispatchIntent(intent: DispatchDeliveryIntent): Promise<void> {
+    await this.dispatchDeliveryMutex.run(intent.edgeId, async () => {
+      const edge = await this.getEdge(intent.flowId, intent.edgeId);
+      if (!edge || edge.state !== "created") {
+        return;
+      }
+
+      await this.markHandoffCancelled(intent.flowId, intent.edgeId);
+      await this.removeActiveRole(intent.flowId, intent.handoff.targetRoleId);
+      console.error("dispatch delivery intent dropped after exhausting retries", {
+        flowId: intent.flowId,
+        edgeId: intent.edgeId,
+        taskId: intent.handoff.taskId,
+        targetRoleId: intent.handoff.targetRoleId,
+      });
+    });
+  }
+
+  private async getEdge(
+    flowId: string,
+    edgeId: string
+  ): Promise<FlowLedger["edges"][number] | null> {
+    const flow = await this.deps.flowLedgerStore.get(flowId);
+    if (!flow) {
+      return null;
+    }
+
+    return flow.edges.find((edge) => edge.edgeId === edgeId) ?? null;
+  }
+
   private async putFlow(flow: FlowLedger): Promise<void> {
     await this.deps.flowLedgerStore.put(flow, flow.version != null ? { expectedVersion: flow.version } : undefined);
     await this.recordRuntimeChainBestEffort("syncFlowStatus", flow, () => this.deps.runtimeChainRecorder?.syncFlowStatus(flow));
@@ -1108,6 +1237,13 @@ function sanitizeRecentMessagesForDispatch(messages: TeamMessageSummary[]): Team
 
 function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
+}
+
+function hasTrackedHandoff(runState: RoleRunState, taskId: string): boolean {
+  return (
+    runState.lastDequeuedTaskId === taskId ||
+    runState.inbox.some((handoff) => handoff.taskId === taskId)
+  );
 }
 
 function buildHandoffEdge(flowId: string, handoff: HandoffEnvelope): FlowLedger["edges"][number] {

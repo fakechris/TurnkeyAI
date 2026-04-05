@@ -52,6 +52,10 @@ export class OutboxBatchShipper<T> {
     this.kick(0);
   }
 
+  start(): void {
+    this.kick(0);
+  }
+
   async flush(): Promise<void> {
     await this.drain(true);
   }
