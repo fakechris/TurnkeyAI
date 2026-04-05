@@ -1,13 +1,7 @@
 import type {
   ActivationType,
   ContinuityMode,
-  DispatchConstraints,
-  DispatchContinuity,
-  DispatchContinuationContext,
-  DispatchCoordination,
   DispatchMode,
-  DispatchPolicy,
-  DispatchRecoveryContext,
   FlowId,
   FlowLedger,
   MessageId,
@@ -27,6 +21,14 @@ import type {
   ThreadId,
   WorkerKind,
 } from "./team-core";
+import type {
+  DispatchConstraints,
+  DispatchContinuity,
+  DispatchContinuationContext,
+  DispatchCoordination,
+  DispatchPolicy,
+  DispatchRecoveryContext,
+} from "./team-dispatch";
 import type {
   BrowserPageResult,
   BrowserSession,

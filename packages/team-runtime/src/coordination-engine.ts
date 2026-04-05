@@ -231,7 +231,7 @@ export class CoordinationEngine {
       constraints: {
         ...handoff.payload.constraints!,
         dispatchPolicy: {
-          ...handoff.payload.constraints!.dispatchPolicy,
+          ...getDispatchPolicy(handoff.payload),
           ...(flow.nextExpectedRoleId ? { expectedNextRoleIds: [flow.nextExpectedRoleId] } : {}),
         },
       },
