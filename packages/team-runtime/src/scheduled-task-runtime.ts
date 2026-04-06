@@ -9,13 +9,7 @@ import type {
   ScheduledTaskStore,
   TriggeredScheduledTask,
 } from "@turnkeyai/core-types/team";
-import {
-  getScheduledContinuity,
-  getScheduledSessionTarget,
-  getScheduledTargetRoleId,
-  getScheduledTargetWorker,
-  normalizeScheduledTaskRecord,
-} from "@turnkeyai/core-types/team";
+import { normalizeScheduledTaskRecord } from "@turnkeyai/core-types/team";
 import { classifyRuntimeError } from "@turnkeyai/qc-runtime/failure-taxonomy";
 
 import type { CoordinationEngine } from "./coordination-engine";
@@ -149,7 +143,8 @@ export class DefaultScheduledTaskRuntime implements ScheduledTaskRuntime {
       return;
     }
 
-    const targetWorker = getScheduledTargetWorker(task);
+    const dispatch = getRequiredScheduledDispatch(task);
+    const targetWorker = dispatch.targetWorker;
     await this.replayRecorder.record({
       replayId: `${task.taskId}:scheduled`,
       layer: "scheduled",
@@ -157,22 +152,28 @@ export class DefaultScheduledTaskRuntime implements ScheduledTaskRuntime {
       recordedAt: dispatchedAt,
       threadId: task.threadId,
       taskId: task.taskId,
-      roleId: getScheduledTargetRoleId(task),
+      roleId: dispatch.targetRoleId,
       ...(targetWorker ? { workerType: targetWorker } : {}),
       summary: failure
         ? failure.message
-        : `Scheduled task dispatched to ${getScheduledTargetRoleId(task)}${targetWorker ? ` via ${targetWorker}` : ""}.`,
+        : `Scheduled task dispatched to ${dispatch.targetRoleId}${targetWorker ? ` via ${targetWorker}` : ""}.`,
       ...(failure ? { failure } : {}),
       metadata: {
-        sessionTarget: getScheduledSessionTarget(task),
+        sessionTarget: dispatch.sessionTarget,
         schedule: task.schedule,
         capsule: task.capsule,
-        ...(getScheduledContinuity(task)?.context?.recovery
-          ? { recoveryContext: getScheduledContinuity(task)?.context?.recovery }
-          : {}),
+        ...(dispatch.continuity?.context?.recovery ? { recoveryContext: dispatch.continuity.context.recovery } : {}),
       },
     });
   }
+}
+
+function getRequiredScheduledDispatch(task: ScheduledTaskRecord): NonNullable<ScheduledTaskRecord["dispatch"]> {
+  const normalized = task.dispatch ? task : normalizeScheduledTaskRecord(task);
+  if (!normalized.dispatch) {
+    throw new Error(`scheduled task is missing canonical dispatch payload: ${task.taskId}`);
+  }
+  return normalized.dispatch;
 }
 
 function computeNextRunAt(expr: string, tz: string, after: number): number {

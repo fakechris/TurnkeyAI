@@ -91,7 +91,12 @@ export async function handleRecoveryRoutes(input: {
       sendJson(res, 400, { error: "threadId is required" });
       return true;
     }
-    const group = await deps.getReplayGroup(threadId, decodeURIComponent(replayGroupMatch[1]!));
+    const groupId = parsePathParam(replayGroupMatch[1]!);
+    if (!groupId) {
+      sendJson(res, 400, { error: "groupId is required" });
+      return true;
+    }
+    const group = await deps.getReplayGroup(threadId, groupId);
     if (!group) {
       sendJson(res, 404, { error: "replay group not found" });
       return true;
@@ -107,7 +112,12 @@ export async function handleRecoveryRoutes(input: {
       sendJson(res, 400, { error: "threadId is required" });
       return true;
     }
-    const bundle = await deps.getReplayBundle(threadId, decodeURIComponent(replayBundleMatch[1]!));
+    const groupId = parsePathParam(replayBundleMatch[1]!);
+    if (!groupId) {
+      sendJson(res, 400, { error: "groupId is required" });
+      return true;
+    }
+    const bundle = await deps.getReplayBundle(threadId, groupId);
     if (!bundle) {
       sendJson(res, 404, { error: "replay bundle not found" });
       return true;
@@ -123,7 +133,12 @@ export async function handleRecoveryRoutes(input: {
       sendJson(res, 400, { error: "threadId is required" });
       return true;
     }
-    const recovery = await deps.getReplayRecovery(threadId, decodeURIComponent(replayRecoveryMatch[1]!));
+    const groupId = parsePathParam(replayRecoveryMatch[1]!);
+    if (!groupId) {
+      sendJson(res, 400, { error: "groupId is required" });
+      return true;
+    }
+    const recovery = await deps.getReplayRecovery(threadId, groupId);
     if (!recovery) {
       sendJson(res, 404, { error: "replay recovery not found" });
       return true;
@@ -158,7 +173,12 @@ export async function handleRecoveryRoutes(input: {
       sendJson(res, 400, { error: "threadId is required" });
       return true;
     }
-    const run = await deps.getRecoveryRun(threadId, decodeURIComponent(recoveryRunMatch[1]!));
+    const recoveryRunId = parsePathParam(recoveryRunMatch[1]!);
+    if (!recoveryRunId) {
+      sendJson(res, 400, { error: "recoveryRunId is required" });
+      return true;
+    }
+    const run = await deps.getRecoveryRun(threadId, recoveryRunId);
     if (!run) {
       sendJson(res, 404, { error: "recovery run not found" });
       return true;
@@ -174,7 +194,12 @@ export async function handleRecoveryRoutes(input: {
       sendJson(res, 400, { error: "threadId is required" });
       return true;
     }
-    const timeline = await deps.getRecoveryTimeline(threadId, decodeURIComponent(recoveryTimelineMatch[1]!));
+    const recoveryRunId = parsePathParam(recoveryTimelineMatch[1]!);
+    if (!recoveryRunId) {
+      sendJson(res, 400, { error: "recoveryRunId is required" });
+      return true;
+    }
+    const timeline = await deps.getRecoveryTimeline(threadId, recoveryRunId);
     if (!timeline) {
       sendJson(res, 404, { error: "recovery run not found" });
       return true;
@@ -192,9 +217,14 @@ export async function handleRecoveryRoutes(input: {
       sendJson(res, 400, { error: "threadId is required" });
       return true;
     }
+    const recoveryRunId = parsePathParam(recoveryRunActionMatch[1]!);
+    if (!recoveryRunId) {
+      sendJson(res, 400, { error: "recoveryRunId is required" });
+      return true;
+    }
     const result = await deps.executeRecoveryRunAction({
       threadId,
-      recoveryRunId: decodeURIComponent(recoveryRunActionMatch[1]!),
+      recoveryRunId,
       action: recoveryRunActionMatch[2] as "approve" | "reject" | "retry" | "fallback" | "resume",
     });
     sendJson(res, result.statusCode, result.body);
@@ -208,9 +238,14 @@ export async function handleRecoveryRoutes(input: {
       sendJson(res, 400, { error: "threadId is required" });
       return true;
     }
+    const groupId = parsePathParam(replayRecoveryDispatchMatch[1]!);
+    if (!groupId) {
+      sendJson(res, 400, { error: "groupId is required" });
+      return true;
+    }
     const result = await deps.dispatchReplayRecovery({
       threadId,
-      groupId: decodeURIComponent(replayRecoveryDispatchMatch[1]!),
+      groupId,
     });
     sendJson(res, result.statusCode, result.body);
     return true;
@@ -218,7 +253,12 @@ export async function handleRecoveryRoutes(input: {
 
   const replayMatch = url.pathname.match(/^\/replays\/([^/]+)$/);
   if (req.method === "GET" && replayMatch) {
-    const replay = await deps.getReplay(decodeURIComponent(replayMatch[1]!));
+    const replayId = parsePathParam(replayMatch[1]!);
+    if (!replayId) {
+      sendJson(res, 400, { error: "replayId is required" });
+      return true;
+    }
+    const replay = await deps.getReplay(replayId);
     if (!replay) {
       sendJson(res, 404, { error: "replay not found" });
       return true;
@@ -228,4 +268,12 @@ export async function handleRecoveryRoutes(input: {
   }
 
   return false;
+}
+
+function parsePathParam(value: string): string | null {
+  try {
+    return parseRequiredNonEmptyString(decodeURIComponent(value));
+  } catch {
+    return null;
+  }
 }

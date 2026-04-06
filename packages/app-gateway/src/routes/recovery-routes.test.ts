@@ -137,3 +137,29 @@ test("recovery routes slice recovery runs when limit is provided", async () => {
     runs: [{ recoveryRunId: "recovery-1", threadId: "thread-1" }],
   });
 });
+
+test("recovery routes reject blank decoded path ids", async () => {
+  const response = createResponse();
+  await handleRecoveryRoutes({
+    req: createRequest({ method: "POST", url: "/replay-recoveries/%20/dispatch?threadId=thread-1" }),
+    res: response.res,
+    url: new URL("http://127.0.0.1/replay-recoveries/%20/dispatch?threadId=thread-1"),
+    deps: createDeps(),
+  });
+
+  assert.equal(response.res.statusCode, 400);
+  assert.deepEqual(response.json, { error: "groupId is required" });
+});
+
+test("recovery routes reject malformed encoded path ids", async () => {
+  const response = createResponse();
+  await handleRecoveryRoutes({
+    req: createRequest({ method: "GET", url: "/recovery-runs/%E0%A4%A?threadId=thread-1" }),
+    res: response.res,
+    url: new URL("http://127.0.0.1/recovery-runs/%E0%A4%A?threadId=thread-1"),
+    deps: createDeps(),
+  });
+
+  assert.equal(response.res.statusCode, 400);
+  assert.deepEqual(response.json, { error: "recoveryRunId is required" });
+});

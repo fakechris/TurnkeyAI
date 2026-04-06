@@ -10,10 +10,6 @@ import type {
   RuntimeChainStatus,
 } from "@turnkeyai/core-types/team";
 import {
-  getScheduledContinuity,
-  getScheduledSessionTarget,
-  getScheduledTargetRoleId,
-  getScheduledTargetWorker,
   normalizeScheduledTaskRecord,
 } from "@turnkeyai/core-types/team";
 import { decodeBrowserSessionPayload } from "@turnkeyai/core-types/browser-session-payload";
@@ -306,9 +302,18 @@ export function createRecoveryActionService(input: {
       if (!isStaleInFlightRecoveryRun(run, records, now)) {
         continue;
       }
-      const failed = buildStaleRecoveryRunFailure(run, now);
+      const failed = await persistStaleRecoveryRunFailureWithRetry({
+        initialRun: run,
+        records,
+        now,
+      });
+      if (!failed || failed.status !== "failed") {
+        if (failed) {
+          nextRuns[index] = failed;
+        }
+        continue;
+      }
       nextRuns[index] = failed;
-      await recoveryRunStore.put(failed, { expectedVersion: run.version });
       await recoveryRunEventStore.append({
         eventId: idGenerator.messageId(),
         recoveryRunId: failed.recoveryRunId,
@@ -337,26 +342,30 @@ export function createRecoveryActionService(input: {
 
   async function syncRecoveryRuntime(threadId: string): Promise<RecoveryRuntimeSnapshot> {
     const { records, report, runs } = await loadRecoveryRuntime(threadId);
-    const existingRuns = await recoveryRunStore.listByThread(threadId);
-    const existingByRunId = new Map(existingRuns.map((run) => [run.recoveryRunId, JSON.stringify(run)]));
-    const previousByRunId = new Map(existingRuns.map((run) => [run.recoveryRunId, run]));
-    const changedRuns = runs.filter((run) => existingByRunId.get(run.recoveryRunId) !== JSON.stringify(run));
-    await Promise.all(
-      changedRuns.map((run) =>
-        recoveryRunStore.put(run, {
-          expectedVersion: previousByRunId.get(run.recoveryRunId)?.version,
+    const persistedChanges: Array<{ previous: RecoveryRun | null; next: RecoveryRun }> = [];
+    for (const run of runs) {
+      persistedChanges.push(
+        await persistDerivedRecoveryRunWithRetry({
+          desiredRun: run,
+          records,
+          now: clock.now(),
         })
-      )
-    );
+      );
+    }
     await Promise.all(
-      changedRuns.map((run) =>
+      persistedChanges.map((change) =>
         appendDerivedRecoveryRunEvents({
-          previous: previousByRunId.get(run.recoveryRunId) ?? null,
-          next: run,
+          previous: change.previous,
+          next: change.next,
         })
       )
     );
-    return { records, report, runs };
+    const persistedRuns = await recoveryRunStore.listByThread(threadId);
+    return {
+      records,
+      report,
+      runs: buildRecoveryRuns(records, persistedRuns, clock.now()),
+    };
   }
 
   function createRecoveryRunSkeleton(recovery: ReplayRecoveryPlan, now: number): RecoveryRun {
@@ -542,8 +551,146 @@ export function createRecoveryActionService(input: {
     }
   }
 
+  function getRequiredScheduledDispatch(task: ScheduledTaskRecord): NonNullable<ScheduledTaskRecord["dispatch"]> {
+    const normalized = task.dispatch ? task : normalizeScheduledTaskRecord(task);
+    if (!normalized.dispatch) {
+      throw new Error(`scheduled task is missing canonical dispatch payload: ${task.taskId}`);
+    }
+    return normalized.dispatch;
+  }
+
+  function getScheduledRecoveryContext(task: ScheduledTaskRecord) {
+    return getRequiredScheduledDispatch(task).continuity?.context?.recovery;
+  }
+
+  function buildIdempotentRecoveryActionResponse(
+    run: RecoveryRun,
+    action: RecoveryRunAction
+  ): { statusCode: number; body: unknown } | null {
+    const currentAttempt = run.currentAttemptId
+      ? run.attempts.find((attempt) => attempt.attemptId === run.currentAttemptId) ?? null
+      : null;
+    if (!currentAttempt || currentAttempt.action !== action) {
+      return null;
+    }
+
+    if (action === "reject" && run.status === "aborted") {
+      return {
+        statusCode: 200,
+        body: {
+          accepted: true,
+          idempotent: true,
+          recoveryRun: run,
+        },
+      };
+    }
+
+    if (["running", "retrying", "fallback_running", "resumed"].includes(run.status)) {
+      return {
+        statusCode: 202,
+        body: {
+          accepted: true,
+          idempotent: true,
+          ...(currentAttempt.dispatchedTaskId ? { dispatchedTaskId: currentAttempt.dispatchedTaskId } : {}),
+          ...(currentAttempt.dispatchReplayId ? { dispatchReplayId: currentAttempt.dispatchReplayId } : {}),
+          recoveryRun: run,
+        },
+      };
+    }
+
+    return null;
+  }
+
   function isVersionConflictError(error: unknown): boolean {
     return error instanceof Error && error.message.includes("version conflict");
+  }
+
+  async function persistStaleRecoveryRunFailureWithRetry(input: {
+    initialRun: RecoveryRun;
+    records: Awaited<ReturnType<FileReplayRecorder["list"]>>;
+    now: number;
+  }): Promise<RecoveryRun | null> {
+    let currentRun: RecoveryRun | null = input.initialRun;
+    while (currentRun) {
+      if (!isStaleInFlightRecoveryRun(currentRun, input.records, input.now)) {
+        return currentRun;
+      }
+
+      const failedRun = buildStaleRecoveryRunFailure(currentRun, input.now);
+      try {
+        await recoveryRunStore.put(failedRun, { expectedVersion: currentRun.version });
+        return failedRun;
+      } catch (error) {
+        if (!isVersionConflictError(error)) {
+          throw error;
+        }
+        currentRun = await recoveryRunStore.get(currentRun.recoveryRunId);
+      }
+    }
+
+    return null;
+  }
+
+  async function persistDerivedRecoveryRunWithRetry(input: {
+    desiredRun: RecoveryRun;
+    records: Awaited<ReturnType<FileReplayRecorder["list"]>>;
+    now: number;
+  }): Promise<{ previous: RecoveryRun | null; next: RecoveryRun }> {
+    let previous = await recoveryRunStore.get(input.desiredRun.recoveryRunId);
+    let next = input.desiredRun;
+
+    while (true) {
+      if (JSON.stringify(previous) === JSON.stringify(next)) {
+        return {
+          previous,
+          next,
+        };
+      }
+
+      try {
+        await recoveryRunStore.put(next, { expectedVersion: previous?.version });
+        return {
+          previous,
+          next,
+        };
+      } catch (error) {
+        if (!isVersionConflictError(error)) {
+          throw error;
+        }
+        previous = await recoveryRunStore.get(input.desiredRun.recoveryRunId);
+        if (!previous) {
+          next = input.desiredRun;
+          continue;
+        }
+        next = findRecoveryRun(input.records, input.desiredRun.recoveryRunId, [previous], input.now) ?? previous;
+      }
+    }
+  }
+
+  async function ensureRecoveryRunExistsWithRetry(input: {
+    recovery: ReplayRecoveryPlan;
+    existingRun: RecoveryRun | null;
+    now: number;
+  }): Promise<RecoveryRun> {
+    if (input.existingRun) {
+      return input.existingRun;
+    }
+
+    const skeleton = createRecoveryRunSkeleton(input.recovery, input.now);
+    while (true) {
+      const existing = await recoveryRunStore.get(skeleton.recoveryRunId);
+      if (existing) {
+        return existing;
+      }
+      try {
+        await recoveryRunStore.put(skeleton, { expectedVersion: skeleton.version });
+        return skeleton;
+      } catch (error) {
+        if (!isVersionConflictError(error)) {
+          throw error;
+        }
+      }
+    }
   }
 
   async function persistRejectedRecoveryRunWithRetry(input: {
@@ -928,7 +1075,7 @@ export function createRecoveryActionService(input: {
 
       const actionGuardConflict = buildRecoveryRunActionConflict(syncedRun, actionInput.action);
       if (actionGuardConflict) {
-        return {
+        return buildIdempotentRecoveryActionResponse(syncedRun, actionInput.action) ?? {
           statusCode: 409,
           body: actionGuardConflict,
         };
@@ -1064,7 +1211,8 @@ export function createRecoveryActionService(input: {
           error,
           fallbackMessage: "recovery dispatch failed",
         });
-        const targetWorker = getScheduledTargetWorker(dispatched.scheduledTask);
+        const scheduledDispatch = getRequiredScheduledDispatch(dispatched.scheduledTask);
+        const targetWorker = scheduledDispatch.targetWorker;
         await replayRecorder.record({
           replayId: dispatched.dispatchReplayId,
           layer: "scheduled",
@@ -1072,15 +1220,15 @@ export function createRecoveryActionService(input: {
           recordedAt: now,
           threadId: dispatched.scheduledTask.threadId,
           taskId: dispatched.scheduledTask.taskId,
-          roleId: getScheduledTargetRoleId(dispatched.scheduledTask),
+          roleId: scheduledDispatch.targetRoleId,
           ...(targetWorker ? { workerType: targetWorker } : {}),
           summary: failure.message,
           failure,
           metadata: {
-            sessionTarget: getScheduledSessionTarget(dispatched.scheduledTask),
+            sessionTarget: scheduledDispatch.sessionTarget,
             schedule: dispatched.scheduledTask.schedule,
             capsule: dispatched.scheduledTask.capsule,
-            recoveryContext: getScheduledContinuity(dispatched.scheduledTask)?.context?.recovery,
+            recoveryContext: getScheduledRecoveryContext(dispatched.scheduledTask),
           },
         });
         const failed = await persistFailedDispatchedRecoveryRunWithRetry({
@@ -1138,7 +1286,8 @@ export function createRecoveryActionService(input: {
       }
       stopRecoveryHeartbeat();
 
-      const targetWorker = getScheduledTargetWorker(dispatched.scheduledTask);
+      const scheduledDispatch = getRequiredScheduledDispatch(dispatched.scheduledTask);
+      const targetWorker = scheduledDispatch.targetWorker;
       await replayRecorder.record({
         replayId: dispatched.dispatchReplayId,
         layer: "scheduled",
@@ -1146,14 +1295,14 @@ export function createRecoveryActionService(input: {
         recordedAt: now,
         threadId: dispatched.scheduledTask.threadId,
         taskId: dispatched.scheduledTask.taskId,
-        roleId: getScheduledTargetRoleId(dispatched.scheduledTask),
+        roleId: scheduledDispatch.targetRoleId,
         ...(targetWorker ? { workerType: targetWorker } : {}),
         summary: `Recovery ${actionInput.action} dispatched for ${syncedRun.sourceGroupId}.`,
         metadata: {
-          sessionTarget: getScheduledSessionTarget(dispatched.scheduledTask),
+          sessionTarget: scheduledDispatch.sessionTarget,
           schedule: dispatched.scheduledTask.schedule,
           capsule: dispatched.scheduledTask.capsule,
-          recoveryContext: getScheduledContinuity(dispatched.scheduledTask)?.context?.recovery,
+          recoveryContext: getScheduledRecoveryContext(dispatched.scheduledTask),
         },
       });
       await recoveryRunEventStore.append({
@@ -1253,10 +1402,11 @@ export function createRecoveryActionService(input: {
           },
         };
       }
-      const run = synced.runs.find((item) => item.sourceGroupId === recovery.groupId) ?? createRecoveryRunSkeleton(recovery, clock.now());
-      if (!(await recoveryRunStore.get(run.recoveryRunId))) {
-        await recoveryRunStore.put(run, { expectedVersion: run.version });
-      }
+      const run = await ensureRecoveryRunExistsWithRetry({
+        recovery,
+        existingRun: synced.runs.find((item) => item.sourceGroupId === recovery.groupId) ?? null,
+        now: clock.now(),
+      });
       return executeRecoveryRunActionInner({
         run,
         action: "dispatch",
