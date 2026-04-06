@@ -119,13 +119,16 @@ async function reconcileRoleRunWithRetry(
     let clearedInvalidHandoffs = 0;
     for (const handoff of currentRun.inbox) {
       const normalizedPayload = normalizeRelayPayload(handoff.payload);
-      const cachedFlow =
-        flowCache.get(handoff.flowId) ??
+      const cachedFlow = flowCache.has(handoff.flowId) ? flowCache.get(handoff.flowId) : undefined;
+      const resolvedFlow =
+        cachedFlow ??
         (await flowLedgerStore.get(handoff.flowId).then((flow) => {
-          flowCache.set(handoff.flowId, flow);
+          if (flow) {
+            flowCache.set(handoff.flowId, flow);
+          }
           return flow;
         }));
-      if (handoff.threadId !== currentRun.threadId || !cachedFlow || cachedFlow.threadId !== currentRun.threadId) {
+      if (handoff.threadId !== currentRun.threadId || !resolvedFlow || resolvedFlow.threadId !== currentRun.threadId) {
         clearedInvalidHandoffs += 1;
         mutated = true;
         continue;
