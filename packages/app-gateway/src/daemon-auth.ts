@@ -15,6 +15,20 @@ export interface DaemonAuthorizationResult {
   requiredAccess: DaemonAccessLevel | "public";
   grantedAccess?: DaemonAccessLevel;
   authMode: DaemonAuthConfig["authMode"];
+  token?: string;
+}
+
+export interface RelayPeerIdentityBinding {
+  peerId: string;
+  boundAt: number;
+  lastSeenAt: number;
+}
+
+export interface RelayPeerIdentityBindingResult {
+  ok: boolean;
+  statusCode?: number;
+  error?: string;
+  binding?: RelayPeerIdentityBinding;
 }
 
 export function resolveDaemonAuthConfig(
@@ -87,6 +101,7 @@ export function authorizeDaemonRequest(
     requiredAccess,
     grantedAccess,
     authMode: config.authMode,
+    token,
   };
 }
 
@@ -242,4 +257,95 @@ function tokenGrantsAccess(
 function normalizeToken(value: string | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
+}
+
+export function createRelayPeerIdentityBindingStore(input?: {
+  now?: () => number;
+}): {
+  bindPeerIdentity(authorization: DaemonAuthorizationResult, peerId: string): RelayPeerIdentityBindingResult;
+  authorizePeerIdentity(authorization: DaemonAuthorizationResult, peerId: string): RelayPeerIdentityBindingResult;
+  getBinding(token: string): RelayPeerIdentityBinding | null;
+} {
+  const now = input?.now ?? (() => Date.now());
+  const bindings = new Map<string, RelayPeerIdentityBinding>();
+
+  function authorizeOrBind(
+    mode: "bind" | "authorize",
+    authorization: DaemonAuthorizationResult,
+    peerId: string
+  ): RelayPeerIdentityBindingResult {
+    const normalizedPeerId = peerId.trim();
+    if (!normalizedPeerId) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "peerId is required",
+      };
+    }
+
+    if (authorization.authMode === "disabled" || authorization.grantedAccess === "admin") {
+      return {
+        ok: true,
+      };
+    }
+
+    if (authorization.grantedAccess !== "relay-peer" || !authorization.token) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: "relay peer identity binding requires relay-peer access",
+      };
+    }
+
+    const current = bindings.get(authorization.token);
+    if (!current) {
+      if (mode === "authorize") {
+        return {
+          ok: false,
+          statusCode: 403,
+          error: "relay peer token is not bound to a peerId",
+        };
+      }
+      const binding = {
+        peerId: normalizedPeerId,
+        boundAt: now(),
+        lastSeenAt: now(),
+      };
+      bindings.set(authorization.token, binding);
+      return {
+        ok: true,
+        binding,
+      };
+    }
+
+    if (current.peerId !== normalizedPeerId) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: `relay peer token is bound to peerId ${current.peerId}`,
+      };
+    }
+
+    const updated = {
+      ...current,
+      lastSeenAt: now(),
+    };
+    bindings.set(authorization.token, updated);
+    return {
+      ok: true,
+      binding: updated,
+    };
+  }
+
+  return {
+    bindPeerIdentity(authorization, peerId) {
+      return authorizeOrBind("bind", authorization, peerId);
+    },
+    authorizePeerIdentity(authorization, peerId) {
+      return authorizeOrBind("authorize", authorization, peerId);
+    },
+    getBinding(token) {
+      return bindings.get(token) ?? null;
+    },
+  };
 }
