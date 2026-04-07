@@ -264,10 +264,10 @@ export function createRelayPeerIdentityBindingStore(input?: {
 }): {
   bindPeerIdentity(authorization: DaemonAuthorizationResult, peerId: string): RelayPeerIdentityBindingResult;
   authorizePeerIdentity(authorization: DaemonAuthorizationResult, peerId: string): RelayPeerIdentityBindingResult;
-  getBinding(token: string): RelayPeerIdentityBinding | null;
+  getBinding(token: string, peerId?: string): RelayPeerIdentityBinding | null;
 } {
   const now = input?.now ?? (() => Date.now());
-  const bindings = new Map<string, RelayPeerIdentityBinding>();
+  const bindings = new Map<string, Map<string, RelayPeerIdentityBinding>>();
 
   function authorizeOrBind(
     mode: "bind" | "authorize",
@@ -297,7 +297,8 @@ export function createRelayPeerIdentityBindingStore(input?: {
       };
     }
 
-    const current = bindings.get(authorization.token);
+    const byPeerId = bindings.get(authorization.token) ?? new Map<string, RelayPeerIdentityBinding>();
+    const current = byPeerId.get(normalizedPeerId);
     if (!current) {
       if (mode === "authorize") {
         return {
@@ -311,18 +312,11 @@ export function createRelayPeerIdentityBindingStore(input?: {
         boundAt: now(),
         lastSeenAt: now(),
       };
-      bindings.set(authorization.token, binding);
+      byPeerId.set(normalizedPeerId, binding);
+      bindings.set(authorization.token, byPeerId);
       return {
         ok: true,
         binding,
-      };
-    }
-
-    if (current.peerId !== normalizedPeerId) {
-      return {
-        ok: false,
-        statusCode: 403,
-        error: `relay peer token is bound to peerId ${current.peerId}`,
       };
     }
 
@@ -330,7 +324,8 @@ export function createRelayPeerIdentityBindingStore(input?: {
       ...current,
       lastSeenAt: now(),
     };
-    bindings.set(authorization.token, updated);
+    byPeerId.set(normalizedPeerId, updated);
+    bindings.set(authorization.token, byPeerId);
     return {
       ok: true,
       binding: updated,
@@ -344,8 +339,15 @@ export function createRelayPeerIdentityBindingStore(input?: {
     authorizePeerIdentity(authorization, peerId) {
       return authorizeOrBind("authorize", authorization, peerId);
     },
-    getBinding(token) {
-      return bindings.get(token) ?? null;
+    getBinding(token, peerId) {
+      const byPeerId = bindings.get(token);
+      if (!byPeerId) {
+        return null;
+      }
+      if (peerId) {
+        return byPeerId.get(peerId) ?? null;
+      }
+      return byPeerId.values().next().value ?? null;
     },
   };
 }

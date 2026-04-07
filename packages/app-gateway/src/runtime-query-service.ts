@@ -4,6 +4,7 @@ import type {
   RuntimeChain,
   RuntimeChainCanonicalState,
   RuntimeChainStatus,
+  RuntimeSummaryEntry,
   RuntimeSummaryReport,
   WorkerSessionRecord,
   WorkerRuntime,
@@ -30,20 +31,30 @@ import type { FileRecoveryRunStore } from "@turnkeyai/team-store/recovery/file-r
 import type { FileRecoveryRunEventStore } from "@turnkeyai/team-store/recovery/file-recovery-run-event-store";
 import type { FileTeamThreadStore } from "@turnkeyai/team-store/file-team-thread-store";
 
-type RuntimeChainEntry = { chain: RuntimeChain; status: RuntimeChainStatus };
-type TruthAligned<T> = T & {
+export type RuntimeChainEntry = { chain: RuntimeChain; status: RuntimeChainStatus };
+export type TruthAligned<T> = T & {
   confirmed: boolean;
   inferred: boolean;
   stale: boolean;
   truthSource: string;
 };
-type TruthAlignedRuntimeSummaryReport = RuntimeSummaryReport & {
+export type TruthAlignedRuntimeSummaryEntry = TruthAligned<RuntimeSummaryEntry>;
+export type TruthAlignedRuntimeSummaryReport = Omit<
+  RuntimeSummaryReport,
+  "attentionChains" | "activeChains" | "waitingChains" | "staleChains" | "failedChains" | "recentlyResolved"
+> & {
+  attentionChains: TruthAlignedRuntimeSummaryEntry[];
+  activeChains: TruthAlignedRuntimeSummaryEntry[];
+  waitingChains: TruthAlignedRuntimeSummaryEntry[];
+  staleChains: TruthAlignedRuntimeSummaryEntry[];
+  failedChains: TruthAlignedRuntimeSummaryEntry[];
+  recentlyResolved: TruthAlignedRuntimeSummaryEntry[];
   confirmed: boolean;
   inferred: boolean;
   stale: boolean;
   truthSource: string;
 };
-type TruthAlignedRuntimeChainDetail = {
+export type TruthAlignedRuntimeChainDetail = {
   chain: unknown;
   status: unknown;
   spans: unknown[];
@@ -64,16 +75,16 @@ function isTerminalWorkerStatus(record: WorkerSessionRecord): boolean {
 }
 
 export interface RuntimeQueryService {
-  listRuntimeChainEntriesByThread(threadId: string, limit: number): Promise<RuntimeChainEntry[]>;
-  listActiveRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]>;
+  listRuntimeChainEntriesByThread(threadId: string, limit: number): Promise<Array<TruthAligned<RuntimeChainEntry>>>;
+  listActiveRuntimeChainEntries(limit: number, threadId?: string | null): Promise<Array<TruthAligned<RuntimeChainEntry>>>;
   listRuntimeChainsByCanonicalState(
     state: RuntimeChainCanonicalState,
     limit: number,
     threadId?: string | null
-  ): Promise<RuntimeChainEntry[]>;
+  ): Promise<Array<TruthAligned<RuntimeChainEntry>>>;
   listWorkerSessions(limit: number, threadId?: string | null): Promise<WorkerSessionRecord[]>;
   loadRuntimeSummary(threadId: string | null, limit: number): Promise<TruthAlignedRuntimeSummaryReport>;
-  listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]>;
+  listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<Array<TruthAligned<RuntimeChainEntry>>>;
   loadRuntimeChainDetail(chainId: string, eventLimit?: number): Promise<TruthAlignedRuntimeChainDetail | null>;
 }
 
@@ -390,7 +401,7 @@ export function createRuntimeQueryService(input: {
   }
 
   return {
-    async listRuntimeChainEntriesByThread(threadId: string, limit: number): Promise<RuntimeChainEntry[]> {
+    async listRuntimeChainEntriesByThread(threadId: string, limit: number): Promise<Array<TruthAligned<RuntimeChainEntry>>> {
       const storedStatuses = await runtimeChainStatusStore.listByThread(threadId);
       const storedStatusChainIds = new Set(storedStatuses.map((status) => status.chainId));
       const entries = await loadRuntimeChainEntriesForThread(threadId);
@@ -408,7 +419,7 @@ export function createRuntimeQueryService(input: {
         );
     },
 
-    async listActiveRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]> {
+    async listActiveRuntimeChainEntries(limit: number, threadId?: string | null): Promise<Array<TruthAligned<RuntimeChainEntry>>> {
       const entries = await loadRuntimeChainEntriesForScope(threadId);
       const storedStatusChainIds = await loadStoredStatusChainIds(threadId);
       return entries
@@ -430,7 +441,7 @@ export function createRuntimeQueryService(input: {
       state: RuntimeChainCanonicalState,
       limit: number,
       threadId?: string | null
-    ): Promise<RuntimeChainEntry[]> {
+    ): Promise<Array<TruthAligned<RuntimeChainEntry>>> {
       const entries = await loadRuntimeChainEntriesForScope(threadId);
       const storedStatusChainIds = await loadStoredStatusChainIds(threadId);
       return entries
@@ -550,7 +561,7 @@ export function createRuntimeQueryService(input: {
       };
     },
 
-    async listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<RuntimeChainEntry[]> {
+    async listStaleRuntimeChainEntries(limit: number, threadId?: string | null): Promise<Array<TruthAligned<RuntimeChainEntry>>> {
       const entries = await loadRuntimeChainEntriesForScope(threadId);
       const storedStatusChainIds = await loadStoredStatusChainIds(threadId);
       return entries
@@ -665,7 +676,7 @@ export function createRuntimeQueryService(input: {
       return {
         ...detail,
         confirmed: status != null,
-        inferred: true,
+        inferred: status == null,
         stale: Boolean((detail.status as RuntimeChainStatus | null)?.stale),
         truthSource: status == null ? "stored-chain-fallback-status" : "stored-chain",
       };

@@ -201,7 +201,7 @@ test("relay peer identity binding store binds relay-peer tokens to one peer id",
 
   const bound = store.bindPeerIdentity(authorization, "peer-1");
   assert.equal(bound.ok, true);
-  assert.deepEqual(store.getBinding("relay-token"), {
+  assert.deepEqual(store.getBinding("relay-token", "peer-1"), {
     peerId: "peer-1",
     boundAt: 100,
     lastSeenAt: 100,
@@ -214,8 +214,41 @@ test("relay peer identity binding store binds relay-peer tokens to one peer id",
   assert.deepEqual(mismatch, {
     ok: false,
     statusCode: 403,
-    error: "relay peer token is bound to peerId peer-1",
+    error: "relay peer token is not bound to a peerId",
   });
+});
+
+test("relay peer identity binding store allows multiple peer ids for the same token", () => {
+  let now = 100;
+  const store = createRelayPeerIdentityBindingStore({
+    now: () => now,
+  });
+  const authorization = {
+    authorized: true,
+    requiredAccess: "relay-peer" as const,
+    grantedAccess: "relay-peer" as const,
+    authMode: "token-layered" as const,
+    token: "relay-token",
+  };
+
+  const first = store.bindPeerIdentity(authorization, "peer-1");
+  now = 200;
+  const second = store.bindPeerIdentity(authorization, "peer-2");
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.deepEqual(store.getBinding("relay-token", "peer-1"), {
+    peerId: "peer-1",
+    boundAt: 100,
+    lastSeenAt: 100,
+  });
+  assert.deepEqual(store.getBinding("relay-token", "peer-2"), {
+    peerId: "peer-2",
+    boundAt: 200,
+    lastSeenAt: 200,
+  });
+  assert.equal(store.authorizePeerIdentity(authorization, "peer-1").ok, true);
+  assert.equal(store.authorizePeerIdentity(authorization, "peer-2").ok, true);
 });
 
 test("relay peer identity binding store bypasses admin and disabled auth", () => {

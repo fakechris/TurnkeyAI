@@ -104,6 +104,12 @@ export async function handleRelayRoutes(input: {
       sendJson(res, 503, { error: "relay browser transport is not active" });
       return true;
     }
+    const peerId = decodeURIComponent(relayPeerTargetsMatch[1]!);
+    const peerIdentity = relayPeerBindingStore.authorizePeerIdentity(authorization, peerId);
+    if (!peerIdentity.ok) {
+      sendJson(res, peerIdentity.statusCode ?? 403, { error: peerIdentity.error ?? "forbidden" });
+      return true;
+    }
     const bodyResult = await readJsonBodySafe<{
       targets?: Array<{
         relayTargetId?: string;
@@ -114,12 +120,6 @@ export async function handleRelayRoutes(input: {
     }>(req);
     if (!bodyResult.ok) {
       sendJson(res, 400, { error: bodyResult.error });
-      return true;
-    }
-    const peerId = decodeURIComponent(relayPeerTargetsMatch[1]!);
-    const peerIdentity = relayPeerBindingStore.authorizePeerIdentity(authorization, peerId);
-    if (!peerIdentity.ok) {
-      sendJson(res, peerIdentity.statusCode ?? 403, { error: peerIdentity.error ?? "forbidden" });
       return true;
     }
     const body = bodyResult.value;
@@ -196,6 +196,11 @@ export async function handleRelayRoutes(input: {
       return true;
     }
     const peerId = decodeURIComponent(relayPeerActionResultsMatch[1]!);
+    const peerIdentity = relayPeerBindingStore.authorizePeerIdentity(authorization, peerId);
+    if (!peerIdentity.ok) {
+      sendJson(res, peerIdentity.statusCode ?? 403, { error: peerIdentity.error ?? "forbidden" });
+      return true;
+    }
     const bodyResult = await readJsonBodySafe<{
       actionRequestId?: string;
       browserSessionId?: string;
@@ -220,11 +225,6 @@ export async function handleRelayRoutes(input: {
       return true;
     }
     const body = bodyResult.value;
-    const peerIdentity = relayPeerBindingStore.authorizePeerIdentity(authorization, peerId);
-    if (!peerIdentity.ok) {
-      sendJson(res, peerIdentity.statusCode ?? 403, { error: peerIdentity.error ?? "forbidden" });
-      return true;
-    }
     if (!body.actionRequestId?.trim() || !body.browserSessionId?.trim() || !body.taskId?.trim() || !body.relayTargetId?.trim()) {
       sendJson(res, 400, {
         error: "actionRequestId, browserSessionId, taskId, and relayTargetId are required",

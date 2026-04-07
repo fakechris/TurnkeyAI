@@ -1263,13 +1263,13 @@ test("runtime query service truth-aligns query summaries and fallback chain stat
   });
 
   const entries = await service.listRuntimeChainEntriesByThread("thread-1", 10);
-  assert.equal((entries[0] as any)?.confirmed, false);
-  assert.equal((entries[0] as any)?.inferred, true);
-  assert.equal((entries[0] as any)?.truthSource, "stored-chain-fallback-status");
+  assert.equal(entries[0]?.confirmed, false);
+  assert.equal(entries[0]?.inferred, true);
+  assert.equal(entries[0]?.truthSource, "stored-chain-fallback-status");
 
   const summary = await service.loadRuntimeSummary("thread-1", 10);
-  assert.equal((summary as any).confirmed, false);
-  assert.equal((summary as any).inferred, true);
-  assert.equal((summary as any).truthSource, "runtime-summary-query");
-  assert.equal((summary.activeChains[0] as any)?.truthSource, "runtime-summary-query");
+  assert.equal(summary.confirmed, false);
+  assert.equal(summary.inferred, true);
+  assert.equal(summary.truthSource, "runtime-summary-query");
+  assert.equal(summary.activeChains[0]?.truthSource, "runtime-summary-query");
 });

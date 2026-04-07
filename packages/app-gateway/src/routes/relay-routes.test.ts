@@ -276,7 +276,7 @@ test("relay peer routes bind relay-peer tokens to a single peer id", async () =>
   });
   assert.equal(wrongHeartbeat.res.statusCode, 403);
   assert.deepEqual(wrongHeartbeat.json, {
-    error: "relay peer token is bound to peerId peer-1",
+    error: "relay peer token is not bound to a peerId",
   });
 });
 
@@ -300,4 +300,64 @@ test("relay peer mutation routes reject unbound relay-peer tokens but allow admi
   });
   assert.equal(admin.res.statusCode, 200);
   assert.deepEqual(admin.json, { peerId: "peer-2" });
+});
+
+test("relay peer routes allow multiple peer ids behind the same relay token", async () => {
+  const relayPeerBindingStore = createRelayPeerIdentityBindingStore();
+
+  const first = await invokeRelayRoute({
+    method: "POST",
+    url: "/relay/peers/register",
+    body: { peerId: "peer-1" },
+    relayPeerBindingStore,
+  });
+  const second = await invokeRelayRoute({
+    method: "POST",
+    url: "/relay/peers/register",
+    body: { peerId: "peer-2" },
+    relayPeerBindingStore,
+  });
+
+  assert.equal(first.res.statusCode, 201);
+  assert.equal(second.res.statusCode, 201);
+
+  const heartbeat = await invokeRelayRoute({
+    method: "POST",
+    url: "/relay/peers/peer-2/heartbeat",
+    relayPeerBindingStore,
+  });
+  assert.equal(heartbeat.res.statusCode, 200);
+  assert.deepEqual(heartbeat.json, { peerId: "peer-2" });
+});
+
+test("relay peer routes reject unauthorized large-body endpoints before parsing request bodies", async () => {
+  const relayPeerBindingStore = createRelayPeerIdentityBindingStore();
+  await invokeRelayRoute({
+    method: "POST",
+    url: "/relay/peers/register",
+    body: { peerId: "peer-1" },
+    relayPeerBindingStore,
+  });
+
+  const actionResult = await invokeRelayRoute({
+    method: "POST",
+    url: "/relay/peers/peer-2/action-results",
+    body: "{",
+    relayPeerBindingStore,
+  });
+  assert.equal(actionResult.res.statusCode, 403);
+  assert.deepEqual(actionResult.json, {
+    error: "relay peer token is not bound to a peerId",
+  });
+
+  const targetReport = await invokeRelayRoute({
+    method: "POST",
+    url: "/relay/peers/peer-2/targets/report",
+    body: "{",
+    relayPeerBindingStore,
+  });
+  assert.equal(targetReport.res.statusCode, 403);
+  assert.deepEqual(targetReport.json, {
+    error: "relay peer token is not bound to a peerId",
+  });
 });
