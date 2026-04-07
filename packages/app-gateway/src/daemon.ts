@@ -550,6 +550,7 @@ coordinationEngine = new CoordinationEngine({
   contextStateMaintainer,
   workerRuntime,
   runtimeChainRecorder,
+  dispatchOutboxRootDir: path.join(DATA_DIR, "dispatch-outbox"),
 });
 const roleRunStartupRecoveryResult = await recoverRoleRunsOnStartup({
   teamThreadStore,

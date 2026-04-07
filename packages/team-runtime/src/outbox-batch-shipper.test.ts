@@ -40,3 +40,33 @@ test("outbox batch shipper retries durable batches before succeeding", async () 
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("outbox batch shipper start drains pre-existing due batches", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "outbox-batch-shipper-start-"));
+
+  try {
+    const outbox = new FileBatchOutbox<number>({
+      rootDir: tempDir,
+    });
+    await outbox.enqueue([7, 8, 9]);
+
+    const delivered: number[][] = [];
+    const shipper = new OutboxBatchShipper<number>({
+      outbox,
+      retryDelayMs: 1,
+      maxRetryDelayMs: 1,
+      sink: async (items) => {
+        delivered.push(items);
+      },
+    });
+
+    shipper.start();
+    await shipper.flush();
+
+    assert.deepEqual(delivered, [[7, 8, 9]]);
+    const remaining = await outbox.listDue();
+    assert.equal(remaining.length, 0);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});

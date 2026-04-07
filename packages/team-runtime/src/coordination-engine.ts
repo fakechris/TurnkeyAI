@@ -34,21 +34,15 @@ import type {
 } from "@turnkeyai/core-types/team";
 import {
   createRelayPayload,
-  getContinuationContext,
-  getDispatchPolicy,
-  getMergeContext,
   normalizeRelayPayload,
-  getParallelContext,
-  getScheduledContinuity,
-  getScheduledPreferredWorkerKinds,
-  getScheduledSessionTarget,
-  getScheduledTargetRoleId,
-  getScheduledTargetWorker,
+  normalizeScheduledTaskRecord,
 } from "@turnkeyai/core-types/team";
 import { KeyedAsyncMutex } from "@turnkeyai/shared-utils/async-mutex";
 import { decodeBrowserSessionPayload } from "@turnkeyai/core-types/browser-session-payload";
 import { detectConflictRoleIds, detectDuplicateRoleIds } from "@turnkeyai/core-types/shard-result-analysis";
 import type { ContextStateMaintainer } from "./context-state-maintainer";
+import { FileBatchOutbox } from "./file-batch-outbox";
+import { OutboxBatchShipper } from "./outbox-batch-shipper";
 
 interface CoordinationEngineDeps {
   teamThreadStore: TeamThreadStore;
@@ -66,14 +60,66 @@ interface CoordinationEngineDeps {
   contextStateMaintainer?: ContextStateMaintainer;
   workerRuntime?: Pick<WorkerRuntime, "getState">;
   runtimeChainRecorder?: import("@turnkeyai/core-types/team").RuntimeChainRecorder;
+  dispatchOutboxRootDir?: string;
+  dispatchOutboxMaxRetries?: number;
+  dispatchOutboxRetryDelayMs?: number;
+  dispatchOutboxBackoffMultiplier?: number;
+  dispatchOutboxMaxRetryDelayMs?: number;
+}
+
+interface DispatchDeliveryIntent {
+  flowId: string;
+  edgeId: string;
+  handoff: HandoffEnvelope;
 }
 
 export class CoordinationEngine {
   private readonly deps: CoordinationEngineDeps;
   private readonly flowMutex = new KeyedAsyncMutex<string>();
+  private readonly dispatchDeliveryMutex = new KeyedAsyncMutex<string>();
+  private readonly dispatchOutboxShipper: OutboxBatchShipper<DispatchDeliveryIntent> | undefined;
 
   constructor(deps: CoordinationEngineDeps) {
     this.deps = deps;
+    this.dispatchOutboxShipper = deps.dispatchOutboxRootDir
+      ? new OutboxBatchShipper<DispatchDeliveryIntent>({
+          outbox: new FileBatchOutbox<DispatchDeliveryIntent>({
+            rootDir: deps.dispatchOutboxRootDir,
+            now: () => this.deps.clock.now(),
+          }),
+          sink: async (items) => {
+            for (const item of items) {
+              await this.deliverDispatchIntent(item);
+            }
+          },
+          ...(deps.dispatchOutboxMaxRetries != null ? { maxRetries: deps.dispatchOutboxMaxRetries } : {}),
+          ...(deps.dispatchOutboxRetryDelayMs != null ? { retryDelayMs: deps.dispatchOutboxRetryDelayMs } : {}),
+          ...(deps.dispatchOutboxBackoffMultiplier != null
+            ? { backoffMultiplier: deps.dispatchOutboxBackoffMultiplier }
+            : {}),
+          ...(deps.dispatchOutboxMaxRetryDelayMs != null
+            ? { maxRetryDelayMs: deps.dispatchOutboxMaxRetryDelayMs }
+            : {}),
+          onDroppedBatch: async (batch) => {
+            for (const item of batch.items) {
+              await this.abandonDispatchIntent(item);
+            }
+          },
+          onRetryScheduled: async (batch, attempt, delayMs, error) => {
+            for (const item of batch.items) {
+              console.warn("dispatch delivery retry scheduled", {
+                flowId: item.flowId,
+                edgeId: item.edgeId,
+                taskId: item.handoff.taskId,
+                attempt,
+                delayMs,
+                error,
+              });
+            }
+          },
+        })
+      : undefined;
+    this.dispatchOutboxShipper?.start();
   }
 
   async handleUserPost(input: SendTeamMessageInput): Promise<void> {
@@ -127,16 +173,17 @@ export class CoordinationEngine {
       console.error("scheduled continuation lookup failed", { taskId: task.taskId, error });
     }
 
-    const scheduledContinuityMode = getScheduledContinuity(task)?.mode;
+    const scheduledDispatch = getRequiredScheduledDispatch(task);
+    const scheduledContinuityMode = scheduledDispatch.continuity?.mode;
     await this.dispatchToRole({
       thread,
       flow,
       sourceMessage: scheduledMessage,
-      toRoleId: getScheduledTargetRoleId(task),
+      toRoleId: scheduledDispatch.targetRoleId,
       activationType: "cascade",
       instructions: buildScheduledInstructions(task, continuationContext),
       preferredWorkerKinds: getScheduledPreferredWorkerKinds(task),
-      sessionTarget: getScheduledSessionTarget(task),
+      sessionTarget: scheduledDispatch.sessionTarget,
       ...(scheduledContinuityMode ? { continuityMode: scheduledContinuityMode } : {}),
       ...(continuationContext ? { continuationContext } : {}),
     });
@@ -231,7 +278,7 @@ export class CoordinationEngine {
       constraints: {
         ...handoff.payload.constraints!,
         dispatchPolicy: {
-          ...getDispatchPolicy(handoff.payload),
+          ...getRequiredRelayDispatchPolicy(handoff.payload),
           ...(flow.nextExpectedRoleId ? { expectedNextRoleIds: [flow.nextExpectedRoleId] } : {}),
         },
       },
@@ -239,6 +286,15 @@ export class CoordinationEngine {
 
     const edgeId = await this.recordHandoff(flow.flowId, handoff);
     if (!edgeId) {
+      return;
+    }
+
+    if (this.dispatchOutboxShipper) {
+      await this.dispatchViaOutbox({
+        flowId: flow.flowId,
+        edgeId,
+        handoff,
+      });
       return;
     }
 
@@ -507,7 +563,7 @@ export class CoordinationEngine {
     roleId: RoleId,
     message: TeamMessage
   ): Promise<void> {
-    const fanOutGroupId = getDispatchPolicy(handoff.payload).fanOutGroupId;
+    const fanOutGroupId = getRequiredRelayDispatchPolicy(handoff.payload).fanOutGroupId;
     if (!fanOutGroupId) {
       return;
     }
@@ -545,7 +601,7 @@ export class CoordinationEngine {
     sourceMessage: TeamMessage,
     handoff: HandoffEnvelope
   ): Promise<boolean> {
-    const fanOutGroupId = getDispatchPolicy(handoff.payload).fanOutGroupId;
+    const fanOutGroupId = getRequiredRelayDispatchPolicy(handoff.payload).fanOutGroupId;
     if (!fanOutGroupId) {
       return false;
     }
@@ -580,7 +636,7 @@ export class CoordinationEngine {
     handoff: HandoffEnvelope,
     error: RuntimeError
   ): Promise<boolean> {
-    const fanOutGroupId = getDispatchPolicy(handoff.payload).fanOutGroupId;
+    const fanOutGroupId = getRequiredRelayDispatchPolicy(handoff.payload).fanOutGroupId;
     if (!fanOutGroupId) {
       return false;
     }
@@ -708,7 +764,7 @@ export class CoordinationEngine {
       }
     | null
   > {
-    const fanOutGroupId = getDispatchPolicy(handoff.payload).fanOutGroupId;
+    const fanOutGroupId = getRequiredRelayDispatchPolicy(handoff.payload).fanOutGroupId;
     if (!fanOutGroupId) {
       return null;
     }
@@ -883,8 +939,10 @@ export class CoordinationEngine {
       metadata: {
         scheduledTaskId: task.taskId,
         schedule: task.schedule,
-        targetRoleId: getScheduledTargetRoleId(task),
-        ...(getScheduledTargetWorker(task) ? { targetWorker: getScheduledTargetWorker(task) } : {}),
+        targetRoleId: getRequiredScheduledDispatch(task).targetRoleId,
+        ...(getRequiredScheduledDispatch(task).targetWorker
+          ? { targetWorker: getRequiredScheduledDispatch(task).targetWorker }
+          : {}),
       },
     };
   }
@@ -900,8 +958,9 @@ export class CoordinationEngine {
   private async resolveScheduledContinuationContext(
     task: ScheduledTaskRecord
   ): Promise<DispatchContinuationContext | undefined> {
-    const scheduledContinuity = getScheduledContinuity(task);
-    const targetWorker = getScheduledTargetWorker(task);
+    const scheduledDispatch = getRequiredScheduledDispatch(task);
+    const scheduledContinuity = scheduledDispatch.continuity;
+    const targetWorker = scheduledDispatch.targetWorker;
     const baseRecoveryContext: DispatchContinuationContext | undefined = scheduledContinuity?.context?.recovery
       ? {
           source: "recovery_dispatch" as const,
@@ -910,12 +969,12 @@ export class CoordinationEngine {
         }
       : undefined;
 
-    if (getScheduledSessionTarget(task) !== "worker" || !targetWorker || !this.deps.workerRuntime) {
+    if (scheduledDispatch.sessionTarget !== "worker" || !targetWorker || !this.deps.workerRuntime) {
       return scheduledContinuity?.context ?? baseRecoveryContext;
     }
 
     try {
-      const runState = await this.deps.roleRunCoordinator.getOrCreate(task.threadId, getScheduledTargetRoleId(task));
+      const runState = await this.deps.roleRunCoordinator.getOrCreate(task.threadId, scheduledDispatch.targetRoleId);
       const workerRunKey = runState.workerSessions?.[targetWorker];
       if (!workerRunKey) {
         return scheduledContinuity?.context ?? baseRecoveryContext;
@@ -964,7 +1023,7 @@ export class CoordinationEngine {
     } catch (error) {
       console.error("scheduled continuation context lookup failed", {
         taskId: task.taskId,
-        targetRoleId: getScheduledTargetRoleId(task),
+        targetRoleId: scheduledDispatch.targetRoleId,
         targetWorker,
         error,
       });
@@ -1042,6 +1101,72 @@ export class CoordinationEngine {
     });
   }
 
+  private async dispatchViaOutbox(intent: DispatchDeliveryIntent): Promise<void> {
+    let persisted = false;
+    try {
+      await this.dispatchOutboxShipper!.enqueue([intent]);
+      persisted = true;
+      await this.deliverDispatchIntent(intent);
+    } catch (error) {
+      if (!persisted) {
+        await this.markHandoffCancelled(intent.flowId, intent.edgeId);
+        await this.removeActiveRole(intent.flowId, intent.handoff.targetRoleId);
+      }
+      throw error;
+    }
+  }
+
+  private async deliverDispatchIntent(intent: DispatchDeliveryIntent): Promise<void> {
+    await this.dispatchDeliveryMutex.run(intent.edgeId, async () => {
+      const edge = await this.getEdge(intent.flowId, intent.edgeId);
+      if (!edge || ["cancelled", "timeout", "responded", "closed"].includes(edge.state)) {
+        return;
+      }
+
+      const runState = await this.deps.roleRunCoordinator.getOrCreate(
+        intent.handoff.threadId,
+        intent.handoff.targetRoleId
+      );
+      if (edge.state === "created" && !hasTrackedHandoff(runState, intent.handoff.taskId)) {
+        await this.deps.roleRunCoordinator.enqueue(runState.runKey, intent.handoff);
+      }
+      if (edge.state === "created") {
+        await this.markHandoffDelivered(intent.flowId, intent.edgeId);
+      }
+      await this.deps.roleLoopRunner.ensureRunning(runState.runKey);
+    });
+  }
+
+  private async abandonDispatchIntent(intent: DispatchDeliveryIntent): Promise<void> {
+    await this.dispatchDeliveryMutex.run(intent.edgeId, async () => {
+      const edge = await this.getEdge(intent.flowId, intent.edgeId);
+      if (!edge || edge.state !== "created") {
+        return;
+      }
+
+      await this.markHandoffCancelled(intent.flowId, intent.edgeId);
+      await this.removeActiveRole(intent.flowId, intent.handoff.targetRoleId);
+      console.error("dispatch delivery intent dropped after exhausting retries", {
+        flowId: intent.flowId,
+        edgeId: intent.edgeId,
+        taskId: intent.handoff.taskId,
+        targetRoleId: intent.handoff.targetRoleId,
+      });
+    });
+  }
+
+  private async getEdge(
+    flowId: string,
+    edgeId: string
+  ): Promise<FlowLedger["edges"][number] | null> {
+    const flow = await this.deps.flowLedgerStore.get(flowId);
+    if (!flow) {
+      return null;
+    }
+
+    return flow.edges.find((edge) => edge.edgeId === edgeId) ?? null;
+  }
+
   private async putFlow(flow: FlowLedger): Promise<void> {
     await this.deps.flowLedgerStore.put(flow, flow.version != null ? { expectedVersion: flow.version } : undefined);
     await this.recordRuntimeChainBestEffort("syncFlowStatus", flow, () => this.deps.runtimeChainRecorder?.syncFlowStatus(flow));
@@ -1110,8 +1235,15 @@ function unique<T>(items: T[]): T[] {
   return [...new Set(items)];
 }
 
+function hasTrackedHandoff(runState: RoleRunState, taskId: string): boolean {
+  return (
+    runState.lastDequeuedTaskId === taskId ||
+    runState.inbox.some((handoff) => handoff.taskId === taskId)
+  );
+}
+
 function buildHandoffEdge(flowId: string, handoff: HandoffEnvelope): FlowLedger["edges"][number] {
-  const dispatchPolicy = getDispatchPolicy(handoff.payload);
+  const dispatchPolicy = getRequiredRelayDispatchPolicy(handoff.payload);
   const edge: FlowLedger["edges"][number] = {
     edgeId: `${handoff.taskId}:edge`,
     flowId,
@@ -1203,7 +1335,7 @@ function buildFanOutMergeInstructions(input: FanOutMergeContext, packet: MergeSy
 }
 
 function ensureShardGroups(flow: FlowLedger, handoff: HandoffEnvelope, now: number): ShardGroupRecord[] {
-  const packet = getParallelContext(handoff.payload);
+  const packet = handoff.payload.coordination?.parallel;
   if (!packet || packet.kind !== "research_shard") {
     return flow.shardGroups ?? [];
   }
@@ -1338,8 +1470,9 @@ function buildScheduledInstructions(
   task: ScheduledTaskRecord,
   continuationContext?: DispatchContinuationContext
 ): string {
-  const targetWorker = getScheduledTargetWorker(task);
-  const sessionTarget = getScheduledSessionTarget(task);
+  const dispatch = getRequiredScheduledDispatch(task);
+  const targetWorker = dispatch.targetWorker;
+  const sessionTarget = dispatch.sessionTarget;
   return [
     `Scheduled task: ${task.capsule.title}`,
     `Schedule: ${task.schedule.expr} (${task.schedule.tz})`,
@@ -1352,4 +1485,25 @@ function buildScheduledInstructions(
   ]
     .filter((line): line is string => Boolean(line))
     .join("\n");
+}
+
+function getRequiredScheduledDispatch(task: ScheduledTaskRecord): NonNullable<ScheduledTaskRecord["dispatch"]> {
+  const normalized = task.dispatch ? task : normalizeScheduledTaskRecord(task);
+  if (!normalized.dispatch) {
+    throw new Error(`scheduled task is missing canonical dispatch payload: ${task.taskId}`);
+  }
+  return normalized.dispatch;
+}
+
+function getScheduledPreferredWorkerKinds(task: ScheduledTaskRecord): WorkerKind[] {
+  const dispatch = getRequiredScheduledDispatch(task);
+  return dispatch.constraints?.preferredWorkerKinds ?? (dispatch.targetWorker ? [dispatch.targetWorker] : []);
+}
+
+function getRequiredRelayDispatchPolicy(payload: HandoffEnvelope["payload"]) {
+  const dispatchPolicy = payload.constraints?.dispatchPolicy ?? normalizeRelayPayload(payload).constraints?.dispatchPolicy;
+  if (!dispatchPolicy) {
+    throw new Error(`handoff payload is missing canonical constraints.dispatchPolicy for thread ${payload.threadId}`);
+  }
+  return dispatchPolicy;
 }

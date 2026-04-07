@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import type {
   FlowLedger,
@@ -20,6 +23,7 @@ import type {
 } from "@turnkeyai/core-types/team";
 
 import { CoordinationEngine } from "./coordination-engine";
+import { FileBatchOutbox } from "./file-batch-outbox";
 
 test("coordination engine aborts flow when hop limit is reached before dispatch", async () => {
   const thread: TeamThread = {
@@ -891,6 +895,221 @@ test("coordination engine removes active role when run setup fails", async () =>
 
   assert.deepEqual(storedFlow.activeRoleIds, []);
   assert.equal(storedFlow.edges[0]?.state, "cancelled");
+});
+
+test("coordination engine retries persisted dispatch delivery through the outbox", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "coordination-engine-dispatch-outbox-"));
+  try {
+    const thread: TeamThread = {
+      threadId: "thread-outbox",
+      teamId: "team-outbox",
+      teamName: "Demo",
+      leadRoleId: "lead",
+      roles: [
+        { roleId: "lead", name: "Lead", seat: "lead", runtime: "local" },
+        { roleId: "operator", name: "Operator", seat: "member", runtime: "local" },
+      ],
+      participantLinks: [],
+      metadataVersion: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const sourceMessage: TeamMessage = {
+      id: "msg-outbox",
+      threadId: thread.threadId,
+      role: "assistant",
+      roleId: "lead",
+      name: "Lead",
+      content: "@{operator} Please continue",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    let storedFlow: FlowLedger = {
+      flowId: "flow-outbox",
+      threadId: thread.threadId,
+      rootMessageId: "msg-root",
+      mode: "serial",
+      status: "running",
+      currentStageIndex: 0,
+      activeRoleIds: [],
+      completedRoleIds: [],
+      failedRoleIds: [],
+      nextExpectedRoleId: "lead",
+      hopCount: 0,
+      maxHops: 5,
+      edges: [],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const flowLedgerStore: FlowLedgerStore = {
+      async get(flowId) {
+        return flowId === storedFlow.flowId ? storedFlow : null;
+      },
+      async put(flow) {
+        storedFlow = flow;
+      },
+      async listByThread(threadId) {
+        return threadId === storedFlow.threadId ? [storedFlow] : [];
+      },
+    };
+
+    const teamThreadStore: TeamThreadStore = {
+      async get(threadId) {
+        return threadId === thread.threadId ? thread : null;
+      },
+      async list() {
+        return [thread];
+      },
+      async create() {
+        throw new Error("not used");
+      },
+      async update() {
+        throw new Error("not used");
+      },
+      async delete() {},
+    };
+
+    const teamMessageStore: TeamMessageStore = {
+      async append() {},
+      async list() {
+        return [sourceMessage];
+      },
+      async get() {
+        return null;
+      },
+    };
+
+    const runState: RoleRunState = {
+      runKey: "role:operator:thread:thread-outbox",
+      threadId: thread.threadId,
+      roleId: "operator",
+      mode: "group",
+      status: "idle",
+      iterationCount: 0,
+      maxIterations: 6,
+      inbox: [],
+      lastActiveAt: 1,
+    };
+
+    let enqueueCalls = 0;
+    let ensureRunningCalls = 0;
+    const roleRunCoordinator: RoleRunCoordinator = {
+      async getOrCreate() {
+        return runState;
+      },
+      async enqueue(_runKey, handoff) {
+        enqueueCalls += 1;
+        if (enqueueCalls === 1) {
+          throw new Error("transient dispatch failure");
+        }
+        runState.inbox = [...runState.inbox, handoff];
+        runState.status = "queued";
+        return runState;
+      },
+      async dequeue() {
+        return null;
+      },
+      async ack() {},
+      async bindWorkerSession() {},
+      async clearWorkerSession() {},
+      async setStatus() {},
+      async incrementIteration() {
+        return 0;
+      },
+      async fail() {},
+      async finish() {},
+    };
+
+    const engine = new CoordinationEngine({
+      teamThreadStore,
+      teamMessageStore,
+      flowLedgerStore,
+      roleRunCoordinator,
+      handoffPlanner: {
+        parseMentions() {
+          return [];
+        },
+        async validateMentionTargets() {
+          return { allowed: true, mode: "serial", targetRoleIds: [] };
+        },
+        async buildHandoffs() {
+          return [];
+        },
+      },
+      recoveryDirector: {
+        async onUserMessage() {
+          return { action: "complete" as const };
+        },
+        async onRoleReply() {
+          return { action: "complete" as const };
+        },
+        async onRoleFailure() {
+          return { action: "abort" as const, reason: "fail" };
+        },
+      },
+      roleLoopRunner: {
+        async ensureRunning() {
+          ensureRunningCalls += 1;
+        },
+      },
+      summaryBuilder: {
+        async getRecentMessages() {
+          return [];
+        },
+      },
+      relayBriefBuilder: {
+        build() {
+          return "brief";
+        },
+      },
+      idGenerator: {
+        flowId: () => "flow-generated",
+        messageId: () => "msg-generated",
+        taskId: () => "task-outbox",
+      },
+      runtimeLimits: {
+        flowMaxHops: 5,
+      },
+      clock: {
+        now: () => Date.now(),
+      },
+      dispatchOutboxRootDir: tempDir,
+      dispatchOutboxRetryDelayMs: 5,
+      dispatchOutboxMaxRetryDelayMs: 5,
+      dispatchOutboxMaxRetries: 3,
+    });
+
+    await assert.rejects(() =>
+      engine.dispatchToRole({
+        thread,
+        flow: storedFlow,
+        sourceMessage,
+        fromRoleId: "lead",
+        toRoleId: "operator",
+        activationType: "mention",
+      }),
+      /transient dispatch failure/
+    );
+
+    assert.equal(storedFlow.edges[0]?.state, "created");
+    assert.deepEqual(storedFlow.activeRoleIds, ["operator"]);
+
+    const outbox = new FileBatchOutbox<unknown>({ rootDir: tempDir });
+    await waitFor(async () => {
+      const remaining = await outbox.listDue(32, Date.now() + 1_000);
+      return remaining.length === 0 && storedFlow.edges[0]?.state === "delivered";
+    });
+
+    assert.equal(enqueueCalls, 2);
+    assert.equal(storedFlow.edges[0]?.state, "delivered");
+    assert.deepEqual(storedFlow.activeRoleIds, ["operator"]);
+    assert.ok(ensureRunningCalls >= 1);
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("coordination engine carries scheduled worker resume hints into the handoff payload", async () => {
@@ -2455,6 +2674,17 @@ test("coordination engine treats runtime chain recorder failures as best effort"
   }
   assert.equal((currentFlow as FlowLedger).status, "waiting_role");
 });
+
+async function waitFor(check: () => Promise<boolean>, timeoutMs = 500, intervalMs = 10): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await check()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  assert.fail(`condition not met within ${timeoutMs}ms`);
+}
 
 function buildEngine(input: {
   teamThreadStore: TeamThreadStore;

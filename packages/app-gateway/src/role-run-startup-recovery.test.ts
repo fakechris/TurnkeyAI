@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { HandoffEnvelope, RoleRunState, TeamThread } from "@turnkeyai/core-types/team";
+import type { FlowLedger, HandoffEnvelope, RoleRunState, TeamThread } from "@turnkeyai/core-types/team";
 
 import { recoverRoleRunsOnStartup } from "./role-run-startup-recovery";
 
@@ -271,4 +271,330 @@ test("role run startup recovery restarts queued running and resuming role runs",
     lastActiveAt: 14,
     workerSessions: {},
   });
+});
+
+test("role run startup recovery retries orphaned run failure after a version conflict", async () => {
+  const threads: TeamThread[] = [
+    {
+      threadId: "thread-1",
+      teamId: "team-1",
+      teamName: "Demo",
+      leadRoleId: "lead",
+      roles: [],
+      participantLinks: [],
+      metadataVersion: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ];
+  const snapshotRun: RoleRunState = {
+    runKey: "run:orphaned-retry",
+    threadId: "thread-orphan",
+    roleId: "role-1",
+    mode: "group",
+    status: "waiting_worker",
+    iterationCount: 1,
+    maxIterations: 4,
+    inbox: [],
+    lastActiveAt: 10,
+    version: 1,
+    workerSessions: {
+      browser: "worker:orphaned",
+    },
+  };
+  let latestRun: RoleRunState = { ...snapshotRun };
+  let putAttempts = 0;
+
+  const result = await recoverRoleRunsOnStartup({
+    teamThreadStore: {
+      async list() {
+        return threads;
+      },
+    } as any,
+    flowLedgerStore: {
+      async get() {
+        return null;
+      },
+    } as any,
+    roleRunStore: {
+      async listByThread() {
+        return [];
+      },
+      async listAll() {
+        return [snapshotRun];
+      },
+      async get(runKey: string) {
+        return runKey === latestRun.runKey ? latestRun : null;
+      },
+      async put(runState: RoleRunState, options?: { expectedVersion?: number }) {
+        putAttempts += 1;
+        if (putAttempts === 1) {
+          assert.equal(options?.expectedVersion, 1);
+          latestRun = {
+            ...latestRun,
+            version: 2,
+            lastActiveAt: 11,
+          };
+          throw new Error("role run version conflict for run:orphaned-retry: expected 1, found 2");
+        }
+        assert.equal(options?.expectedVersion, 2);
+        latestRun = {
+          ...runState,
+          version: 3,
+        };
+      },
+    } as any,
+    roleLoopRunner: {
+      async ensureRunning() {},
+    } as any,
+  });
+
+  assert.equal(putAttempts, 2);
+  assert.deepEqual(result, {
+    totalRoleRuns: 1,
+    restartedQueuedRuns: 0,
+    restartedRunningRuns: 0,
+    restartedResumingRuns: 0,
+    restartedRunKeys: [],
+    orphanedThreadRuns: 1,
+    failedOrphanedRuns: 1,
+    failedRunKeys: ["run:orphaned-retry"],
+    clearedInvalidHandoffs: 0,
+    queuedRunsIdled: 0,
+  });
+  assert.equal(latestRun.status, "failed");
+  assert.deepEqual(latestRun.workerSessions, {});
+});
+
+test("role run startup recovery retries inbox cleanup after a version conflict", async () => {
+  const threads: TeamThread[] = [
+    {
+      threadId: "thread-1",
+      teamId: "team-1",
+      teamName: "Demo",
+      leadRoleId: "lead",
+      roles: [],
+      participantLinks: [],
+      metadataVersion: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ];
+  const snapshotRun: RoleRunState = {
+    runKey: "run:queued-retry",
+    threadId: "thread-1",
+    roleId: "role-1",
+    mode: "group",
+    status: "queued",
+    iterationCount: 0,
+    maxIterations: 4,
+    inbox: [
+      buildHandoff({
+        taskId: "task-invalid",
+        flowId: "flow-missing",
+        sourceMessageId: "msg-1",
+        targetRoleId: "role-1",
+        threadId: "thread-1",
+        relayBrief: "invalid",
+        createdAt: 10,
+      }),
+    ],
+    lastActiveAt: 10,
+    version: 1,
+  };
+  let latestRun: RoleRunState = { ...snapshotRun };
+  let putAttempts = 0;
+
+  const result = await recoverRoleRunsOnStartup({
+    teamThreadStore: {
+      async list() {
+        return threads;
+      },
+    } as any,
+    flowLedgerStore: {
+      async get() {
+        return null;
+      },
+    } as any,
+    roleRunStore: {
+      async listByThread(threadId: string) {
+        return threadId === "thread-1" ? [snapshotRun] : [];
+      },
+      async get(runKey: string) {
+        return runKey === latestRun.runKey ? latestRun : null;
+      },
+      async put(runState: RoleRunState, options?: { expectedVersion?: number }) {
+        putAttempts += 1;
+        if (putAttempts === 1) {
+          assert.equal(options?.expectedVersion, 1);
+          latestRun = {
+            ...latestRun,
+            version: 2,
+            lastActiveAt: 11,
+          };
+          throw new Error("role run version conflict for run:queued-retry: expected 1, found 2");
+        }
+        assert.equal(options?.expectedVersion, 2);
+        latestRun = {
+          ...runState,
+          version: 3,
+        };
+      },
+      async listAll() {
+        return [snapshotRun];
+      },
+    } as any,
+    roleLoopRunner: {
+      async ensureRunning() {},
+    } as any,
+  });
+
+  assert.equal(putAttempts, 2);
+  assert.deepEqual(result, {
+    totalRoleRuns: 1,
+    restartedQueuedRuns: 0,
+    restartedRunningRuns: 0,
+    restartedResumingRuns: 0,
+    restartedRunKeys: [],
+    orphanedThreadRuns: 0,
+    failedOrphanedRuns: 0,
+    failedRunKeys: [],
+    clearedInvalidHandoffs: 1,
+    queuedRunsIdled: 1,
+  });
+  assert.equal(latestRun.status, "idle");
+  assert.deepEqual(latestRun.inbox, []);
+});
+
+test("role run startup recovery re-reads missing flows after a version conflict", async () => {
+  const threads: TeamThread[] = [
+    {
+      threadId: "thread-1",
+      teamId: "team-1",
+      teamName: "Demo",
+      leadRoleId: "lead",
+      roles: [],
+      participantLinks: [],
+      metadataVersion: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    },
+  ];
+  const handoff = buildHandoff({
+    taskId: "task-retry-flow",
+    flowId: "flow-late",
+    sourceMessageId: "msg-1",
+    targetRoleId: "role-1",
+    threadId: "thread-1",
+    relayBrief: "retry later",
+    createdAt: 10,
+  });
+  const snapshotRun: RoleRunState = {
+    runKey: "run:queued-refresh-flow",
+    threadId: "thread-1",
+    roleId: "role-1",
+    mode: "group",
+    status: "queued",
+    iterationCount: 0,
+    maxIterations: 4,
+    inbox: [handoff],
+    lastActiveAt: 10,
+    version: 1,
+  };
+  let latestRun: RoleRunState = { ...snapshotRun };
+  let putAttempts = 0;
+  let flowGetAttempts = 0;
+  let latestFlow: FlowLedger | null = null;
+
+  const result = await recoverRoleRunsOnStartup({
+    teamThreadStore: {
+      async list() {
+        return threads;
+      },
+    } as any,
+    flowLedgerStore: {
+      async get(flowId: string) {
+        flowGetAttempts += 1;
+        if (flowId !== "flow-late") {
+          return null;
+        }
+        return latestFlow;
+      },
+    } as any,
+    roleRunStore: {
+      async listByThread(threadId: string) {
+        return threadId === "thread-1" ? [snapshotRun] : [];
+      },
+      async get(runKey: string) {
+        return runKey === latestRun.runKey ? latestRun : null;
+      },
+      async put(runState: RoleRunState, options?: { expectedVersion?: number }) {
+        putAttempts += 1;
+        if (putAttempts === 1) {
+          assert.equal(options?.expectedVersion, 1);
+          latestFlow = {
+            flowId: "flow-late",
+            threadId: "thread-1",
+            rootMessageId: "msg-1",
+            mode: "serial",
+            status: "running",
+            currentStageIndex: 0,
+            activeRoleIds: ["role-1"],
+            completedRoleIds: [],
+            failedRoleIds: [],
+            hopCount: 0,
+            maxHops: 4,
+            edges: [],
+            version: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          };
+          latestRun = {
+            ...latestRun,
+            version: 2,
+            lastActiveAt: 11,
+          };
+          throw new Error("role run version conflict for run:queued-refresh-flow: expected 1, found 2");
+        }
+        latestRun = {
+          ...runState,
+          version: 3,
+        };
+      },
+      async listAll() {
+        return [snapshotRun];
+      },
+    } as any,
+    roleLoopRunner: {
+      async ensureRunning() {},
+    } as any,
+  });
+
+  assert.equal(putAttempts, 2);
+  assert.equal(flowGetAttempts, 2);
+  assert.deepEqual(result, {
+    totalRoleRuns: 1,
+    restartedQueuedRuns: 1,
+    restartedRunningRuns: 0,
+    restartedResumingRuns: 0,
+    restartedRunKeys: ["run:queued-refresh-flow"],
+    orphanedThreadRuns: 0,
+    failedOrphanedRuns: 0,
+    failedRunKeys: [],
+    clearedInvalidHandoffs: 0,
+    queuedRunsIdled: 0,
+  });
+  assert.deepEqual(latestRun.inbox, [
+    {
+      ...handoff,
+      payload: {
+        ...handoff.payload,
+        intent: {
+          relayBrief: "retry later",
+          recentMessages: [],
+        },
+      },
+    },
+  ]);
+  assert.equal(latestRun.status, "queued");
 });

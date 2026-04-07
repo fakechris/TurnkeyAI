@@ -26,16 +26,10 @@ export async function reconcileFlowRecoveryOnStartup(input: {
   const affectedFlowIds: string[] = [];
   let abortedOrphanedFlows = 0;
   for (const flow of orphanedFlows) {
-    if (flow.status === "completed" || flow.status === "failed" || flow.status === "aborted") {
+    const aborted = await abortOrphanedFlowWithRetry(input, threadIds, flow);
+    if (!aborted) {
       continue;
     }
-    const { nextExpectedRoleId: _nextExpectedRoleId, ...flowWithoutNextExpectedRole } = flow;
-    await input.flowLedgerStore.put({
-      ...flowWithoutNextExpectedRole,
-      status: "aborted",
-      activeRoleIds: [],
-      updatedAt: input.clock.now(),
-    }, { expectedVersion: flow.version });
     affectedFlowIds.push(flow.flowId);
     abortedOrphanedFlows += 1;
   }
@@ -46,25 +40,20 @@ export async function reconcileFlowRecoveryOnStartup(input: {
   let failedRecoveryRuns = 0;
 
   for (const run of recoveryRuns) {
-    let reason: string | null = null;
-    if (!threadIds.has(run.threadId)) {
-      reason = "Recovery run thread is missing after daemon restart.";
-    } else if (run.flowId) {
-      const flow = flowsById.get(run.flowId);
-      if (!flow) {
-        missingFlowRecoveryRuns += 1;
-        reason = "Recovery run referenced a missing flow.";
-      } else if (flow.threadId !== run.threadId) {
-        crossThreadFlowRecoveryRuns += 1;
-        reason = "Recovery run referenced a flow from a different thread.";
-      }
-    }
-
-    if (!reason || isTerminalRecoveryRun(run)) {
+    const outcome = await failRecoveryRunWithRetry(input, threadIds, run, async (flowId) => {
+      const flow = await input.flowLedgerStore.get(flowId);
+      return flow ?? flowsById.get(flowId) ?? null;
+    });
+    if (!outcome.failed || !outcome.reason) {
       continue;
     }
 
-    await input.recoveryRunStore.put(failRecoveryRun(run, input.clock.now(), reason), { expectedVersion: run.version });
+    if (outcome.reason === "missing_flow") {
+      missingFlowRecoveryRuns += 1;
+    } else if (outcome.reason === "cross_thread_flow") {
+      crossThreadFlowRecoveryRuns += 1;
+    }
+
     affectedRecoveryRunIds.push(run.recoveryRunId);
     failedRecoveryRuns += 1;
   }
@@ -85,6 +74,10 @@ function isTerminalRecoveryRun(run: RecoveryRun): boolean {
   return run.status === "failed" || run.status === "aborted" || run.status === "recovered" || run.status === "superseded";
 }
 
+function isTerminalFlowStatus(status: NonNullable<Awaited<ReturnType<FlowLedgerStore["get"]>>>["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "aborted";
+}
+
 function failRecoveryRun(run: RecoveryRun, now: number, summary: string): RecoveryRun {
   return {
     ...run,
@@ -96,4 +89,113 @@ function failRecoveryRun(run: RecoveryRun, now: number, summary: string): Recove
     waitingReason: summary,
     updatedAt: now,
   };
+}
+
+async function abortOrphanedFlowWithRetry(
+  input: {
+    clock: { now(): number };
+    flowLedgerStore: FlowLedgerStore;
+  },
+  threadIds: Set<string>,
+  initialFlow: NonNullable<Awaited<ReturnType<FlowLedgerStore["get"]>>> 
+): Promise<boolean> {
+  let currentFlow: NonNullable<Awaited<ReturnType<FlowLedgerStore["get"]>>> | null = initialFlow;
+  while (currentFlow) {
+    if (threadIds.has(currentFlow.threadId) || isTerminalFlowStatus(currentFlow.status)) {
+      return false;
+    }
+
+    const { nextExpectedRoleId: _nextExpectedRoleId, ...flowWithoutNextExpectedRole } = currentFlow;
+    try {
+      await input.flowLedgerStore.put({
+        ...flowWithoutNextExpectedRole,
+        status: "aborted",
+        activeRoleIds: [],
+        updatedAt: input.clock.now(),
+      }, { expectedVersion: currentFlow.version });
+      return true;
+    } catch (error) {
+      if (!isVersionConflictError(error)) {
+        throw error;
+      }
+      currentFlow = await input.flowLedgerStore.get(currentFlow.flowId);
+    }
+  }
+
+  return false;
+}
+
+async function failRecoveryRunWithRetry(
+  input: {
+    clock: { now(): number };
+    recoveryRunStore: RecoveryRunStore;
+  },
+  threadIds: Set<string>,
+  initialRun: RecoveryRun,
+  readFlow: (flowId: string) => Promise<Awaited<ReturnType<FlowLedgerStore["get"]>>>
+): Promise<{ failed: boolean; reason?: "missing_flow" | "cross_thread_flow" | "missing_thread" }> {
+  let currentRun: RecoveryRun | null = initialRun;
+  while (currentRun) {
+    if (isTerminalRecoveryRun(currentRun)) {
+      return { failed: false };
+    }
+
+    const reason = await getRecoveryRunFailureReason(currentRun, threadIds, readFlow);
+    if (!reason) {
+      return { failed: false };
+    }
+
+    try {
+      await input.recoveryRunStore.put(
+        failRecoveryRun(currentRun, input.clock.now(), reason.summary),
+        { expectedVersion: currentRun.version }
+      );
+      return { failed: true, reason: reason.kind };
+    } catch (error) {
+      if (!isVersionConflictError(error)) {
+        throw error;
+      }
+      currentRun = await input.recoveryRunStore.get(currentRun.recoveryRunId);
+    }
+  }
+
+  return { failed: false };
+}
+
+async function getRecoveryRunFailureReason(
+  run: RecoveryRun,
+  threadIds: Set<string>,
+  readFlow: (flowId: string) => Promise<Awaited<ReturnType<FlowLedgerStore["get"]>>>
+): Promise<{ kind: "missing_flow" | "cross_thread_flow" | "missing_thread"; summary: string } | null> {
+  if (!threadIds.has(run.threadId)) {
+    return {
+      kind: "missing_thread",
+      summary: "Recovery run thread is missing after daemon restart.",
+    };
+  }
+
+  if (!run.flowId) {
+    return null;
+  }
+
+  const flow = await readFlow(run.flowId);
+  if (!flow) {
+    return {
+      kind: "missing_flow",
+      summary: "Recovery run referenced a missing flow.",
+    };
+  }
+
+  if (flow.threadId !== run.threadId) {
+    return {
+      kind: "cross_thread_flow",
+      summary: "Recovery run referenced a flow from a different thread.",
+    };
+  }
+
+  return null;
+}
+
+function isVersionConflictError(error: unknown): boolean {
+  return error instanceof Error && error.message.includes("version conflict");
 }

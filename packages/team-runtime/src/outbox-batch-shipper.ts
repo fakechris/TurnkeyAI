@@ -49,6 +49,14 @@ export class OutboxBatchShipper<T> {
 
   async enqueue(items: T[]): Promise<void> {
     await this.outbox.enqueue(items);
+    if (this.scheduled) {
+      clearTimeout(this.scheduled);
+      this.scheduled = null;
+    }
+    this.kick(0);
+  }
+
+  start(): void {
     this.kick(0);
   }
 
