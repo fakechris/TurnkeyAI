@@ -1168,8 +1168,8 @@ export class CoordinationEngine {
       persisted = true;
       await this.materializeFlowStartIntent(intent);
     } catch (error) {
-      if (!persisted) {
-        console.error("failed to persist flow start intent", {
+      if (persisted) {
+        console.error("flow start intent accepted for async replay after materialization failure", {
           intentId: intent.intentId,
           kind: intent.kind,
           threadId: intent.threadId,
@@ -1177,7 +1177,16 @@ export class CoordinationEngine {
           messageId: intent.message.id,
           error,
         });
+        return;
       }
+      console.error("failed to persist flow start intent", {
+        intentId: intent.intentId,
+        kind: intent.kind,
+        threadId: intent.threadId,
+        flowId: intent.flow.flowId,
+        messageId: intent.message.id,
+        error,
+      });
       throw error;
     }
   }

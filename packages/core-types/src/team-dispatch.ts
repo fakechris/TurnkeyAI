@@ -79,7 +79,7 @@ export interface RelayPayload {
   instructions?: string;
   /** @deprecated Use `constraints.preferredWorkerKinds`. */
   preferredWorkerKinds?: WorkerKind[];
-  /** @deprecated Use `dispatch.sessionTarget` or `continuity`. */
+  /** @deprecated Prefer `continuity`; keep `sessionTarget` only for legacy compatibility. */
   sessionTarget?: SessionTarget;
   /** @deprecated Use `continuity.context`. */
   continuationContext?: DispatchContinuationContext;

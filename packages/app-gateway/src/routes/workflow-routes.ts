@@ -1,6 +1,15 @@
 import type http from "node:http";
 
-import type { Clock, IdGenerator } from "@turnkeyai/core-types/team";
+import {
+  SESSION_TARGETS,
+  WORKER_KINDS,
+} from "@turnkeyai/core-types/team";
+import type {
+  Clock,
+  IdGenerator,
+  SessionTarget,
+  WorkerKind,
+} from "@turnkeyai/core-types/team";
 
 import {
   parseRequiredNonEmptyString,
@@ -38,13 +47,13 @@ interface ScheduledTaskRuntimeDeps {
       dependencyRefs?: string[];
       expectedOutput?: string;
     };
-    schedule: {
-      kind: "cron";
-      expr: string;
-      tz: string;
-    };
-    sessionTarget?: "main" | "worker";
-    targetWorker?: "browser" | "coder" | "finance" | "explore" | "harness";
+      schedule: {
+        kind: "cron";
+        expr: string;
+        tz: string;
+      };
+    sessionTarget?: SessionTarget;
+    targetWorker?: WorkerKind;
   }): Promise<unknown>;
   triggerDue(now?: number): Promise<unknown>;
 }
@@ -62,8 +71,8 @@ const MAX_SCHEDULED_TITLE_CHARS = 200;
 const MAX_SCHEDULED_INSTRUCTIONS_CHARS = 20_000;
 const MAX_SCHEDULED_REF_COUNT = 32;
 const MAX_SCHEDULED_REF_CHARS = 200;
-const ALLOWED_SESSION_TARGETS = new Set(["main", "worker"]);
-const ALLOWED_TARGET_WORKERS = new Set(["browser", "coder", "finance", "explore", "harness"]);
+const ALLOWED_SESSION_TARGETS = new Set<string>(SESSION_TARGETS);
+const ALLOWED_TARGET_WORKERS = new Set<string>(WORKER_KINDS);
 
 export async function handleWorkflowRoutes(input: {
   req: http.IncomingMessage;
@@ -135,8 +144,8 @@ export async function handleWorkflowRoutes(input: {
         expr: string;
         tz: string;
       };
-      sessionTarget?: "main" | "worker";
-      targetWorker?: "browser" | "coder" | "finance" | "explore" | "harness";
+      sessionTarget?: SessionTarget;
+      targetWorker?: WorkerKind;
     }>(req);
     if (!bodyResult.ok) {
       sendJson(res, 400, { error: bodyResult.error });

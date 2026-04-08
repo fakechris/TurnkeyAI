@@ -1290,13 +1290,10 @@ test("coordination engine replays user-post ingress through the outbox after par
       ingressOutboxMaxRetries: 3,
     });
 
-    await assert.rejects(() =>
-      engine.handleUserPost({
-        threadId: thread.threadId,
-        content: "Recover this flow start.",
-      }),
-      /transient flow persistence failure/
-    );
+    await engine.handleUserPost({
+      threadId: thread.threadId,
+      content: "Recover this flow start.",
+    });
 
     assert.equal(messages.size, 1);
     assert.equal(storedFlow, null);
