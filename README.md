@@ -25,11 +25,13 @@ TurnkeyAI 提供桌面应用和 CLI 两种启动方式。它们打开同一个 C
 
 ### Desktop App
 
-macOS 桌面应用是日常使用入口，在独立窗口中运行完整的 TurnkeyAI 工作台。
+macOS 和 Windows 桌面应用在独立窗口中运行完整的 TurnkeyAI 工作台，并自动启动或复用本机 Runtime。
 
-[下载最新 macOS 版本](https://github.com/fakechris/turnkeyai/releases)
+[下载最新桌面版本](https://github.com/fakechris/turnkeyai/releases)
 
-当前 DMG 使用 ad-hoc 签名。首次打开时，macOS 可能要求你在“系统设置 → 隐私与安全性”中确认运行。
+macOS 提供 Apple Silicon 和 Intel DMG；Windows 提供 x64 安装包。当前 macOS DMG 使用 ad-hoc 签名，首次打开时系统可能要求在“系统设置 → 隐私与安全性”中确认运行。Windows 构建在未配置代码签名证书时也可能显示 SmartScreen 提示。
+
+桌面端的本地开发、打包、发布和验收说明见 [Desktop README](./packages/desktop/README.md)。
 
 ### CLI
 
