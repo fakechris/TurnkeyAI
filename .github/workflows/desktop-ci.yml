@@ -39,6 +39,10 @@ jobs:
           npm run desktop:build
           npm run smoke --workspace @turnkeyai/desktop
       - name: Package and verify macOS arm64
+        env:
+          # The configured identity is ad-hoc ("-"), so no signing secret is exposed.
+          # electron-builder otherwise skips even ad-hoc signing for pull requests.
+          CSC_FOR_PULL_REQUEST: true
         run: |
           npm run desktop:dist:mac:arm64
           npm run desktop:verify:mac
