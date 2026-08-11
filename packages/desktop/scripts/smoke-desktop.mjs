@@ -12,6 +12,10 @@ const executableArg = process.argv
   .slice(2)
   .find((arg) => arg.startsWith("--executable="))
   ?.slice("--executable=".length);
+const requirePackaged = process.argv.includes("--require-packaged");
+if (requirePackaged && !executableArg) {
+  throw new Error("Packaged smoke requires --executable=<path>");
+}
 const desktopExecutable = executableArg ? path.resolve(desktopDir, executableArg) : electronExecutable;
 const desktopArgs = executableArg ? [] : [desktopDir];
 
@@ -55,18 +59,31 @@ try {
     process.stderr.write(chunk);
   });
 
-  const timeout = setTimeout(() => child.kill(), 60_000);
+  let timedOut = false;
+  let forceKillTimeout;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGTERM");
+    forceKillTimeout = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    }, 5_000);
+    forceKillTimeout.unref();
+  }, 60_000);
   const result = await new Promise((resolve) => {
     child.once("error", (error) => resolve({ code: null, error }));
     child.once("exit", (code, signal) => resolve({ code, signal }));
   });
   clearTimeout(timeout);
+  if (forceKillTimeout) clearTimeout(forceKillTimeout);
 
   if ("error" in result) throw result.error;
-  if (result.code !== 0) {
+  if (timedOut || result.code !== 0) {
     const daemonLog = await readFile(path.join(smokeHome, "logs", "daemon.log"), "utf8").catch(
       () => "[daemon log unavailable]"
     );
+    if (timedOut) {
+      throw new Error(`Electron smoke test timed out after 60 seconds\n${daemonLog}`);
+    }
     throw new Error(
       `Electron smoke test exited with code ${result.code} (${result.signal ?? "no signal"})\n${daemonLog}`
     );

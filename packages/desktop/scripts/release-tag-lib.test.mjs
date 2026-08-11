@@ -11,6 +11,7 @@ describe("desktop release tag helpers", () => {
   it("builds the desktop tag from a package version", () => {
     assert.equal(buildDesktopReleaseTag("0.1.0"), "desktop-v0.1.0");
     assert.equal(buildDesktopReleaseTag("1.2.3-rc.1"), "desktop-v1.2.3-rc.1");
+    assert.throws(() => buildDesktopReleaseTag("1.2.3-01"), /valid semver/);
     assert.throws(() => buildDesktopReleaseTag(" 0.1.0 "), /valid semver/);
     assert.throws(() => buildDesktopReleaseTag("latest"), /valid semver/);
   });

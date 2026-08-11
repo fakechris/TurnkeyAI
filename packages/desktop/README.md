@@ -33,7 +33,14 @@ npm run smoke --workspace @turnkeyai/desktop
 如果 daemon 由你单独管理，可让桌面壳只连接现有服务：
 
 ```bash
+# macOS
 TURNKEYAI_DAEMON_URL=http://127.0.0.1:4100 npm run desktop:dev
+```
+
+```powershell
+# Windows PowerShell
+$env:TURNKEYAI_DAEMON_URL = "http://127.0.0.1:4100"
+npm run desktop:dev
 ```
 
 桌面壳只接受 daemon 实际绑定的 `127.0.0.1` origin。它会用一次性 challenge 和本地 token 验证 daemon 的 HMAC proof，避免把 token 交给碰巧占用相同端口的其他进程。Renderer 保持 `sandbox`、`contextIsolation`、无 Node integration，并拒绝所有 Chromium 权限请求；非 `/app` 同源导航会在系统浏览器中打开。
@@ -108,7 +115,7 @@ npm run desktop:release -- --push --allow-dirty
 不要移动已经公开的 tag。代码修复应发布新的 patch version；纯 runner 故障可以重跑 workflow，或对已有 tag 手动触发：
 
 ```bash
-gh workflow run publish-desktop.yml -f tag=desktop-v0.1.0
+gh workflow run publish-desktop.yml -f tag=desktop-v0.1.1
 ```
 
 ## 发布验收

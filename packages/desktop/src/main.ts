@@ -140,6 +140,19 @@ async function ensureDaemon(connection: DesktopConnection): Promise<void> {
         TURNKEYAI_CONTROL_CENTER_DIR: path.join(path.dirname(daemonEntry), "control-center"),
       },
     });
+    await new Promise<void>((resolve, reject) => {
+      const onSpawn = (): void => {
+        child.off("error", onError);
+        resolve();
+      };
+      const onError = (error: Error): void => {
+        child.off("spawn", onSpawn);
+        reject(error);
+      };
+      child.once("spawn", onSpawn);
+      child.once("error", onError);
+    });
+    child.on("error", handleStartupError);
     if (DESKTOP_SMOKE_MODE) smokeDaemon = child;
     else child.unref();
   } finally {

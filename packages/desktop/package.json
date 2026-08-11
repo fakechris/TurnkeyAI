@@ -16,7 +16,7 @@
     "build": "npm run build:main && npm run build:runtime",
     "dev": "npm run build && electron .",
     "smoke": "node scripts/smoke-desktop.mjs",
-    "smoke:packaged": "node scripts/smoke-desktop.mjs",
+    "smoke:packaged": "node scripts/smoke-desktop.mjs --require-packaged",
     "clean:release": "node scripts/clean-release.mjs",
     "pack:mac": "npm run build && npm run clean:release && electron-builder --mac dir",
     "pack:win": "npm run build && npm run clean:release && electron-builder --win dir --x64",
@@ -30,7 +30,7 @@
     "verify:checksums": "node scripts/verify-checksums.mjs",
     "verify:release-tag": "node scripts/verify-release-version.mjs",
     "release": "node scripts/release-desktop.mjs",
-    "test": "tsx --test src/**/*.test.ts scripts/**/*.test.mjs",
+    "test": "tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

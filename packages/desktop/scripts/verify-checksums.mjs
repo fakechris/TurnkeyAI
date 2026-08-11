@@ -10,7 +10,7 @@ const checksumFile = path.resolve(
 );
 const artifactDir = path.dirname(checksumFile);
 const checksumLines = (await readFile(checksumFile, "utf8"))
-  .split("\n")
+  .split(/\r?\n/)
   .filter(Boolean);
 
 if (checksumLines.length === 0) throw new Error(`Checksum file is empty: ${checksumFile}`);
