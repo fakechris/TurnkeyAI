@@ -4,5 +4,5 @@
     "noEmit": true,
     "types": ["node", "electron"]
   },
-  "include": ["src", "tsup.config.ts", "tsup.runtime.config.ts"]
+  "include": ["src", "tsup.config.ts"]
 }

@@ -1,0 +1,70 @@
+name: Desktop CI
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-ci.yml"
+      - ".github/workflows/publish-desktop.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "packages/app-gateway/**"
+      - "packages/control-center/**"
+      - "packages/desktop/**"
+      - "packages/shared-utils/**"
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS arm64 package and smoke
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Test, typecheck, build, and launch smoke
+        run: |
+          npm run test --workspace @turnkeyai/desktop
+          npm run typecheck --workspace @turnkeyai/desktop
+          npm run desktop:build
+          npm run smoke --workspace @turnkeyai/desktop
+      - name: Package and verify macOS arm64
+        run: |
+          npm run desktop:dist:mac:arm64
+          npm run desktop:verify:mac
+          npm run desktop:verify:checksums
+          npm run smoke:packaged --workspace @turnkeyai/desktop -- --executable=dist/release/mac-arm64/TurnkeyAI.app/Contents/MacOS/TurnkeyAI
+
+  windows:
+    name: Windows x64 package and smoke
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Test, typecheck, build, and launch smoke
+        run: |
+          npm run test --workspace @turnkeyai/desktop
+          npm run typecheck --workspace @turnkeyai/desktop
+          npm run desktop:build
+          npm run smoke --workspace @turnkeyai/desktop
+      - name: Package and verify Windows x64
+        run: |
+          npm run desktop:dist:win
+          npm run desktop:verify:win
+          npm run desktop:verify:checksums
+          npm run smoke:packaged --workspace @turnkeyai/desktop -- --executable=dist/release/win-unpacked/TurnkeyAI.exe

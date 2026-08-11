@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
@@ -27,11 +28,13 @@ import {
 
 const HEALTH_TIMEOUT_MS = 10_000;
 const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const DESKTOP_SMOKE_MODE = process.env.TURNKEYAI_DESKTOP_SMOKE === "1";
 
 let mainWindow: BrowserWindow | null = null;
 let dashboardUrl: string | null = null;
 let daemonBaseUrl: string | null = null;
 let startupPromise: Promise<void> | null = null;
+let smokeDaemon: ChildProcess | null = null;
 
 interface DesktopCredential {
   token: string;
@@ -129,7 +132,7 @@ async function ensureDaemon(connection: DesktopConnection): Promise<void> {
   try {
     const child = spawn(process.execPath, [daemonEntry], {
       cwd: path.dirname(daemonEntry),
-      detached: true,
+      detached: !DESKTOP_SMOKE_MODE,
       stdio: ["ignore", logFd, logFd],
       env: {
         ...process.env,
@@ -137,7 +140,8 @@ async function ensureDaemon(connection: DesktopConnection): Promise<void> {
         TURNKEYAI_CONTROL_CENTER_DIR: path.join(path.dirname(daemonEntry), "control-center"),
       },
     });
-    child.unref();
+    if (DESKTOP_SMOKE_MODE) smokeDaemon = child;
+    else child.unref();
   } finally {
     closeSync(logFd);
   }
@@ -222,7 +226,9 @@ async function createWindow(): Promise<BrowserWindow> {
       openExternal(url);
     }
   });
-  window.once("ready-to-show", () => window.show());
+  window.once("ready-to-show", () => {
+    if (!DESKTOP_SMOKE_MODE) window.show();
+  });
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = null;
   });
@@ -244,6 +250,10 @@ async function startDesktop(): Promise<void> {
   dashboardUrl = prepared.url;
   daemonBaseUrl = prepared.baseUrl;
   mainWindow = await createWindow();
+  if (DESKTOP_SMOKE_MODE) {
+    console.info("[desktop-smoke] dashboard loaded");
+    app.quit();
+  }
 }
 
 function ensureDesktopStarted(): Promise<void> {
@@ -256,6 +266,11 @@ function ensureDesktopStarted(): Promise<void> {
 
 function handleStartupError(error: unknown): void {
   const message = error instanceof Error ? error.message : String(error);
+  if (DESKTOP_SMOKE_MODE) {
+    console.error(`[desktop-smoke] ${message}`);
+    app.exit(1);
+    return;
+  }
   dialog.showErrorBox("TurnkeyAI could not start", message);
   app.quit();
 }
@@ -286,5 +301,12 @@ if (!hasSingleInstanceLock) {
 
   app.on("window-all-closed", () => {
     if (process.platform !== "darwin") app.quit();
+  });
+
+  app.on("before-quit", () => {
+    if (DESKTOP_SMOKE_MODE && smokeDaemon && !smokeDaemon.killed) {
+      smokeDaemon.kill();
+      smokeDaemon = null;
+    }
   });
 }

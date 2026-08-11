@@ -20,7 +20,7 @@ Options:
   --push           Push the current branch and desktop-v<version> tag
   --remote=<name>  Git remote to publish to (default: origin)
   --allow-dirty    Tag committed HEAD even if unrelated local work is present
-  --skip-checks    Skip desktop tests and typechecking
+  --skip-checks    Skip desktop tests, typechecking, build, and launch smoke
   --help           Show this help`);
 }
 
@@ -68,6 +68,8 @@ run(process.execPath, [
 if (!options.skipChecks) {
   run("npm", ["run", "test", "--workspace", "@turnkeyai/desktop"]);
   run("npm", ["run", "typecheck", "--workspace", "@turnkeyai/desktop"]);
+  run("npm", ["run", "build", "--workspace", "@turnkeyai/desktop"]);
+  run("npm", ["run", "smoke", "--workspace", "@turnkeyai/desktop"]);
 }
 
 const localTarget = gitOutput(["rev-list", "-n", "1", `refs/tags/${tag}`], true);
@@ -114,4 +116,4 @@ if (!localTarget) {
 run("git", ["push", options.remote, `refs/tags/${tag}`]);
 
 console.info(`[desktop-release] published ${tag} at ${head}`);
-console.info(`[desktop-release] GitHub Actions will build and publish the DMGs`);
+console.info(`[desktop-release] GitHub Actions will build and publish macOS and Windows installers`);

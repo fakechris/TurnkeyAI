@@ -7,11 +7,11 @@ import { fileURLToPath } from "node:url";
 const desktopDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const artifactDir = path.resolve(process.argv[2] ?? path.join(desktopDir, "dist", "release"));
 const files = (await readdir(artifactDir))
-  .filter((name) => name.endsWith(".dmg"))
+  .filter((name) => name.endsWith(".dmg") || name.endsWith(".exe"))
   .sort();
 
 if (files.length === 0) {
-  throw new Error(`No DMG artifacts found in ${artifactDir}`);
+  throw new Error(`No desktop release artifacts found in ${artifactDir}`);
 }
 
 async function sha256(file) {

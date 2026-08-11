@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
@@ -110,13 +111,16 @@ describe("desktop runtime configuration", () => {
   });
 
   it("resolves the bundled daemon next to dev output or in packaged resources", () => {
+    const root = path.parse(process.cwd()).root;
+    const devModuleDir = path.join(root, "repo", "packages", "desktop", "dist", "app");
+    const packagedResources = path.join(root, "TurnkeyAI", "resources");
     assert.equal(
-      resolveRuntimeEntry({ packaged: false, moduleDir: "/repo/packages/desktop/dist/app", resourcesPath: "/ignored" }),
-      "/repo/packages/desktop/dist/runtime/daemon.js"
+      resolveRuntimeEntry({ packaged: false, moduleDir: devModuleDir, resourcesPath: root }),
+      path.join(root, "repo", "packages", "desktop", "dist", "runtime", "daemon.js")
     );
     assert.equal(
-      resolveRuntimeEntry({ packaged: true, moduleDir: "/ignored", resourcesPath: "/Applications/TurnkeyAI.app/Contents/Resources" }),
-      "/Applications/TurnkeyAI.app/Contents/Resources/runtime/daemon.js"
+      resolveRuntimeEntry({ packaged: true, moduleDir: root, resourcesPath: packagedResources }),
+      path.join(packagedResources, "runtime", "daemon.js")
     );
   });
 });
