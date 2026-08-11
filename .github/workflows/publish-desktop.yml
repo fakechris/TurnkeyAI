@@ -1,0 +1,177 @@
+name: Publish Desktop
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing desktop-v* tag to rebuild and publish"
+        required: true
+        type: string
+
+concurrency:
+  group: desktop-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    name: Build macOS DMGs
+    runs-on: macos-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      DESKTOP_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag and desktop version
+        shell: bash
+        run: |
+          [[ "$DESKTOP_RELEASE_TAG" == desktop-v* ]]
+          git show-ref --verify --quiet "refs/tags/$DESKTOP_RELEASE_TAG"
+          [[ "$(git rev-parse HEAD)" == "$(git rev-list -n 1 "refs/tags/$DESKTOP_RELEASE_TAG")" ]]
+          npm run verify:release-tag --workspace @turnkeyai/desktop -- "$DESKTOP_RELEASE_TAG"
+
+      - name: Test and smoke desktop shell
+        run: |
+          npm run test --workspace @turnkeyai/desktop
+          npm run typecheck --workspace @turnkeyai/desktop
+          npm run desktop:build
+          npm run smoke --workspace @turnkeyai/desktop
+
+      - name: Build and verify arm64 and x64 DMGs
+        run: |
+          npm run desktop:dist:mac
+          npm run desktop:verify:mac:release
+          npm run desktop:verify:checksums
+          npm run smoke:packaged --workspace @turnkeyai/desktop -- --executable=dist/release/mac-arm64/TurnkeyAI.app/Contents/MacOS/TurnkeyAI
+
+      - name: Upload macOS release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: turnkeyai-macos-${{ env.DESKTOP_RELEASE_TAG }}
+          if-no-files-found: error
+          retention-days: 14
+          path: packages/desktop/dist/release/*.dmg
+
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      DESKTOP_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify tag and desktop version
+        shell: bash
+        run: |
+          [[ "$DESKTOP_RELEASE_TAG" == desktop-v* ]]
+          git show-ref --verify --quiet "refs/tags/$DESKTOP_RELEASE_TAG"
+          [[ "$(git rev-parse HEAD)" == "$(git rev-list -n 1 "refs/tags/$DESKTOP_RELEASE_TAG")" ]]
+          npm run verify:release-tag --workspace @turnkeyai/desktop -- "$DESKTOP_RELEASE_TAG"
+
+      - name: Test and smoke desktop shell
+        run: |
+          npm run test --workspace @turnkeyai/desktop
+          npm run typecheck --workspace @turnkeyai/desktop
+          npm run desktop:build
+          npm run smoke --workspace @turnkeyai/desktop
+
+      - name: Build and verify Windows x64 installer
+        run: |
+          npm run desktop:dist:win
+          npm run desktop:verify:win
+          npm run desktop:verify:checksums
+          npm run smoke:packaged --workspace @turnkeyai/desktop -- --executable=dist/release/win-unpacked/TurnkeyAI.exe
+
+      - name: Upload Windows release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: turnkeyai-windows-${{ env.DESKTOP_RELEASE_TAG }}
+          if-no-files-found: error
+          retention-days: 14
+          path: packages/desktop/dist/release/*.exe
+
+  publish:
+    name: Publish GitHub Release
+    needs:
+      - macos
+      - windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      DESKTOP_RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout release scripts
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+
+      - name: Download platform assets
+        uses: actions/download-artifact@v5
+        with:
+          pattern: turnkeyai-*-${{ env.DESKTOP_RELEASE_TAG }}
+          merge-multiple: true
+          path: release-assets
+
+      - name: Generate combined checksums
+        run: |
+          node packages/desktop/scripts/write-checksums.mjs release-assets
+          node packages/desktop/scripts/verify-checksums.mjs release-assets/SHA256SUMS.txt
+
+      - name: Create or update GitHub Release
+        shell: bash
+        run: |
+          mapfile -t assets < <(find release-assets -maxdepth 1 -type f \( -name '*.dmg' -o -name '*.exe' -o -name 'SHA256SUMS.txt' \) -print | sort)
+          [[ ${#assets[@]} -eq 4 ]]
+          if gh release view "$DESKTOP_RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$DESKTOP_RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            version="${DESKTOP_RELEASE_TAG#desktop-v}"
+            gh release create "$DESKTOP_RELEASE_TAG" "${assets[@]}" \
+              --verify-tag \
+              --generate-notes \
+              --latest=false \
+              --title "TurnkeyAI Desktop v$version"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
